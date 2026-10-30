@@ -1,0 +1,227 @@
+package ru.polemica.studio;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.*;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+@Service
+class GameService {
+  private final GameRepository games;
+  private final TournamentRepository tournaments;
+  private final EventRepository events;
+  final ObjectMapper mapper;
+  final GameValidator validator;
+  final ApplicationEventPublisher publisher;
+
+  GameService(
+      GameRepository games,
+      TournamentRepository tournaments,
+      EventRepository events,
+      ObjectMapper mapper,
+      GameValidator validator,
+      ApplicationEventPublisher publisher) {
+    this.games = games;
+    this.tournaments = tournaments;
+    this.events = events;
+    this.mapper = mapper;
+    this.validator = validator;
+    this.publisher = publisher;
+  }
+
+  record Changed(String id, boolean tokenRotated) {}
+
+  record GameView(
+      String id,
+      String tournamentId,
+      String tournamentName,
+      int tableNumber,
+      int gameNumber,
+      long revision,
+      Instant updatedAt,
+      GameState state) {}
+
+  record Summary(String id, int tableNumber, int gameNumber, long revision, Instant updatedAt) {}
+
+  List<Tournament> tournamentsFor(String user) {
+    return tournaments.findByOwnerIdOrderByCreatedAtDesc(user);
+  }
+
+  @Transactional
+  Tournament createTournament(String user, String name, String externalId) {
+    var t = new Tournament();
+    t.id = UUID.randomUUID().toString();
+    t.ownerId = user;
+    t.name = name.strip();
+    t.externalId = externalId;
+    t.createdAt = Instant.now();
+    return tournaments.save(t);
+  }
+
+  List<Summary> summaries(String id, String user) {
+    ownedTournament(id, user);
+    return games.findByTournamentIdAndOwnerIdOrderByTableNumberAscGameNumberAsc(id, user).stream()
+        .map(g -> new Summary(g.id, g.tableNumber, g.gameNumber, g.revision, g.updatedAt))
+        .toList();
+  }
+
+  List<Map<String, Object>> history(String id, String user) {
+    owned(id, user);
+    return events.findTop50ByGameIdOrderByRevisionDesc(id).stream()
+        .map(e ->
+            Map.<String, Object>of(
+                "id",
+                e.id,
+                "revision",
+                e.revision,
+                "description",
+                e.description,
+                "createdAt",
+                e.createdAt))
+        .toList();
+  }
+
+  Game owned(String id, String user) {
+    return games.findById(id).filter(g -> g.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+  }
+
+  Tournament ownedTournament(String id, String user) {
+    return tournaments
+        .findById(id)
+        .filter(t -> t.ownerId.equals(user))
+        .orElseThrow(ApiErrors::missing);
+  }
+
+  Game publicGame(String id, String token) {
+    var g = games.findById(id).orElseThrow(ApiErrors::missing);
+    if (token == null
+        || !MessageDigest.isEqual(
+            g.overlayToken.getBytes(StandardCharsets.UTF_8),
+            token.getBytes(StandardCharsets.UTF_8))) throw ApiErrors.missing();
+    return g;
+  }
+
+  GameState state(Game g) {
+    try {
+      return mapper.readValue(g.stateJson, GameState.class);
+    } catch (Exception e) {
+      throw new IllegalStateException("Stored game is invalid", e);
+    }
+  }
+
+  String json(GameState s) {
+    try {
+      return mapper.writeValueAsString(s);
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  GameView view(Game g, boolean publicView) {
+    var s = state(g);
+    if (publicView) {
+      for (var p : s.players) {
+        boolean revealed = s.showRoles || p.revealRole;
+        String image = effectivePhoto(s, p, revealed);
+        p.role = revealed ? p.role : GameState.Role.UNKNOWN;
+        p.photo = image;
+        p.importedPhoto = null;
+        p.revealRole = false;
+      }
+      s.checks = s.checks.stream().filter(c -> s.showChecks && c.published).toList();
+      s.theme.rolePhotos = Map.of();
+      s.theme.useRolePhotos = false;
+    }
+    var t = tournaments.findById(g.tournamentId).orElseThrow(ApiErrors::missing);
+    return new GameView(
+        g.id, g.tournamentId, t.name, g.tableNumber, g.gameNumber, g.revision, g.updatedAt, s);
+  }
+
+  String effectivePhoto(GameState s, GameState.Player p, boolean reveal) {
+    if (p.photo != null && !p.photo.isBlank()) return p.photo;
+    if (reveal && s.theme.useRolePhotos && s.theme.rolePhotos.get(p.role) != null)
+      return s.theme.rolePhotos.get(p.role);
+    return p.importedPhoto;
+  }
+
+  @Transactional
+  GameView create(String tid, String user, int table, int number, boolean demo) {
+    ownedTournament(tid, user);
+    if (table < 1 || table > 100 || number < 1 || number > 10000)
+      throw ApiErrors.bad("Проверьте номер стола и партии.");
+    var g = new Game();
+    g.id = UUID.randomUUID().toString();
+    g.tournamentId = tid;
+    g.ownerId = user;
+    g.tableNumber = table;
+    g.gameNumber = number;
+    g.overlayToken = AuthController.randomToken();
+    g.stateJson = json(GameState.initial(demo));
+    g.updatedAt = Instant.now();
+    games.saveAndFlush(g);
+    event(g, "Партия создана");
+    return view(g, false);
+  }
+
+  @Transactional
+  GameView update(String id, String user, long revision, GameState state, String description) {
+    var g = games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+    if (g.revision != revision)
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "Партия изменилась в другой вкладке. Загрузите актуальное состояние.");
+    validator.validate(state, user);
+    g.stateJson = json(state);
+    g.updatedAt = Instant.now();
+    games.saveAndFlush(g);
+    event(g, description);
+    publisher.publishEvent(new Changed(g.id, false));
+    return view(g, false);
+  }
+
+  @Transactional
+  GameView restore(String id, String user, String eventId, long revision) {
+    owned(id, user);
+    var e =
+        events.findById(eventId).filter(x -> x.gameId.equals(id)).orElseThrow(ApiErrors::missing);
+    try {
+      return update(
+          id,
+          user,
+          revision,
+          mapper.readValue(e.stateJson, GameState.class),
+          "Восстановлена версия " + e.revision);
+    } catch (com.fasterxml.jackson.core.JsonProcessingException x) {
+      throw new IllegalStateException(x);
+    }
+  }
+
+  @Transactional
+  String rotate(String id, String user) {
+    var g = games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+    g.overlayToken = AuthController.randomToken();
+    games.saveAndFlush(g);
+    publisher.publishEvent(new Changed(g.id, true));
+    return g.overlayToken;
+  }
+
+  private void event(Game g, String description) {
+    var e = new GameEvent();
+    e.id = UUID.randomUUID().toString();
+    e.gameId = g.id;
+    e.revision = g.revision;
+    e.description =
+        description == null || description.isBlank()
+            ? "Состояние обновлено"
+            : description.substring(0, Math.min(200, description.length()));
+    e.stateJson = g.stateJson;
+    e.createdAt = g.updatedAt;
+    events.save(e);
+  }
+}

@@ -1,0 +1,6 @@
+# Install Caddy on your server and replace this domain with one you control.
+# Set PUBLIC_URL=https://studio.example.com and COOKIE_SECURE=true in .env.
+studio.example.com {
+    reverse_proxy 127.0.0.1:8088
+    header Strict-Transport-Security "max-age=31536000"
+}

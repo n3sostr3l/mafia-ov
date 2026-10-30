@@ -1,0 +1,11 @@
+node_modules/
+frontend/dist/
+frontend/.angular/
+backend/target/
+.tools/
+.runtime/
+data/
+.env
+*.log
+test-results/
+playwright-report/

@@ -1,0 +1,1177 @@
+@if (isOverlay) { @if (overlayReady()) {
+<div
+  class="obs-output"
+  [style.width.px]="game().state.theme.width"
+  [style.height.px]="game().state.theme.height"
+>
+  <app-overlay [game]="game()" [token]="overlayToken" [publicImages]="true" />
+</div>
+} @else if (overlayError()) {
+<div class="overlay-error">
+  <app-icon name="screen" />
+  <h1>Оверлей недоступен</h1>
+  <p>{{ overlayError() }}</p>
+</div>
+} } @else {
+<div class="app-shell">
+  <aside class="sidebar" [class.mobile-open]="mobileMenu()">
+    <a class="brand" href="/demo" (click)="$event.preventDefault(); demo()"
+      ><img src="/mark.svg" alt="" /><span
+        >Polemica<small>studio</small></span
+      ></a
+    >
+    <div class="workspace-label">Рабочее пространство</div>
+    <nav aria-label="Основная навигация">
+      <button [class.active]="page() === 'studio'" (click)="go('studio')">
+        <app-icon name="grid" />Панель судьи<span class="nav-active-dot"></span>
+      </button>
+      <button
+        [class.active]="page() === 'library' || page() === 'tournament'"
+        (click)="go('library')"
+      >
+        <app-icon name="trophy" />Турниры
+      </button>
+      <button [class.active]="page() === 'settings'" (click)="go('settings')">
+        <app-icon name="settings" />Оформление
+      </button>
+      <button [class.active]="page() === 'history'" (click)="go('history')">
+        <app-icon name="history" />История изменений
+      </button>
+    </nav>
+    <div class="sidebar-obs">
+      <span class="sidebar-obs-icon"><app-icon name="screen" /></span>
+      <h3>Ваш стол в эфире</h3>
+      <p>Один источник в OBS.<br />Все события — на экране.</p>
+      <button (click)="obs()">
+        Настроить оверлей <app-icon name="chevron" />
+      </button>
+    </div>
+    <div class="sidebar-bottom">
+      <button class="help-link" (click)="go('help')">
+        <app-icon name="help" />Как это работает
+      </button>
+      @if (user(); as u) {
+      <div class="account">
+        <span class="account-avatar">{{ u.username.slice(0, 1) }}</span>
+        <div><strong>{{ u.username }}</strong><small>Судья</small></div>
+        <button class="icon-button" title="Выйти" (click)="logout()">
+          <app-icon name="logout" />
+        </button>
+      </div>
+      } @else {
+      <button class="account login-account" (click)="modal.set('auth')">
+        <span class="account-avatar"><app-icon name="users" /></span>
+        <div>
+          <strong>Войти в аккаунт</strong><small>Сохраните свои партии</small>
+        </div>
+        <app-icon name="chevron" />
+      </button>
+      }
+    </div>
+  </aside>
+  @if (mobileMenu()) {
+  <button
+    class="sidebar-backdrop"
+    aria-label="Закрыть меню"
+    (click)="mobileMenu.set(false)"
+  ></button>
+  }
+  <div class="main-shell">
+    <header class="topbar">
+      <div class="breadcrumbs">
+        <button
+          class="icon-button mobile-menu-button"
+          aria-label="Открыть меню"
+          (click)="mobileMenu.set(!mobileMenu())"
+        >
+          <app-icon name="menu" /></button
+        ><span>Рабочее пространство</span><app-icon name="chevron" /><strong
+          >{{ page() === 'studio' ? 'Панель судьи' : page() === 'settings' ?
+          'Оформление' : page() === 'history' ? 'История изменений' : page() ===
+          'help' ? 'Справка' : 'Турниры' }}</strong
+        >
+      </div>
+      <div class="topbar-right">
+        <span class="save-state"
+          ><i [class.offline]="!isDemo() && !connected()"></i>{{ saving() ?
+          'Сохранение…' : isDemo() ? 'Демонстрация' : connected() ? 'Подключено'
+          : 'Ожидание связи' }}</span
+        ><span class="topbar-divider"></span
+        ><button class="icon-button" aria-label="Справка" (click)="go('help')">
+          <app-icon name="help" />
+        </button>
+      </div>
+    </header>
+    <main>
+      @if (error()) {
+      <div class="error-banner" role="alert">
+        <app-icon name="alert" /><span>{{ error() }}</span
+        ><button
+          class="icon-button"
+          aria-label="Скрыть ошибку"
+          (click)="error.set('')"
+        >
+          <app-icon name="close" />
+        </button>
+      </div>
+      } @if (loading()) {
+      <div class="loading-bar" aria-label="Загрузка"></div>
+      } @if (page() === 'studio') {
+      <div class="page-heading">
+        <div>
+          <div class="context-line">
+            <span class="context-dot"></span>{{ isDemo() ? 'Демонстрационный
+            турнир' : 'Ручное управление' }}<span class="context-separator"
+              >/</span
+            >Стол {{ game().tableNumber }}
+          </div>
+          <h1>
+            {{ game().tournamentName }}<span class="title-sub"
+              >Партия {{ game().gameNumber }}</span
+            >
+          </h1>
+          <p>Управляйте игрой. Оверлей позаботится об остальном.</p>
+        </div>
+        <div class="heading-actions">
+          <button
+            class="button secondary"
+            (click)="undo()"
+            [disabled]="saving()"
+          >
+            <app-icon name="undo" />Отменить</button
+          ><button class="button primary" (click)="obs()">
+            <app-icon name="screen" />Открыть OBS-оверлей<app-icon
+              name="external"
+            />
+          </button>
+        </div>
+      </div>
+      <section class="game-toolbar" aria-label="Управление раундом">
+        <div class="phase-control">
+          <app-icon
+            [name]="game().state.phase === 'NIGHT' ? 'moon' : 'sun'"
+          /><select
+            aria-label="Фаза партии"
+            [ngModel]="game().state.phase"
+            (ngModelChange)="setPhase($event)"
+            [disabled]="saving()"
+          >
+            @for (phase of phases; track phase.value) {
+            <option [value]="phase.value">{{ phase.label }}</option>
+            }
+          </select>
+        </div>
+        <div class="round-control">
+          <span>Раунд</span
+          ><button
+            (click)="round(-1)"
+            aria-label="Предыдущий раунд"
+            [disabled]="saving() || game().state.round <= 1"
+          >
+            −</button
+          ><strong>{{ game().state.round }}</strong
+          ><button
+            (click)="round(1)"
+            aria-label="Следующий раунд"
+            [disabled]="saving() || game().state.round >= 100"
+          >
+            +
+          </button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <span class="alive-count"
+          ><app-icon name="users" /><strong>{{ alive() }}</strong> в игре</span
+        ><button class="next-day" (click)="nextRound()" [disabled]="saving()">
+          Следующий день<app-icon name="chevron" />
+        </button>
+      </section>
+      <div class="studio-layout">
+        <div class="studio-center">
+          <section class="preview-panel">
+            <div class="panel-heading">
+              <h2><span class="live-dot"></span>Предпросмотр эфира</h2>
+              <span class="dimension-label"
+                >{{ game().state.theme.width }} × {{ game().state.theme.height
+                }}</span
+              ><button
+                class="icon-button"
+                title="Открыть оверлей"
+                (click)="obs()"
+              >
+                <app-icon name="external" />
+              </button>
+            </div>
+            <div class="preview-viewport">
+              <app-overlay [game]="publicGame()" [compact]="true" />
+            </div>
+            <div class="preview-footer">
+              <span
+                ><app-icon
+                  [name]="game().state.showRoles ? 'eye' : 'hidden'"
+                />{{ game().state.showRoles ? 'Роли открыты зрителям' :
+                'Секретные роли скрыты от зрителей' }}</span
+              ><button
+                (click)="toggleVisibility('showRoles')"
+                [disabled]="saving()"
+              >
+                {{ game().state.showRoles ? 'Скрыть роли' : 'Открыть роли'
+                }}<app-icon name="chevron" />
+              </button>
+            </div>
+          </section>
+          <section class="players-panel">
+            <div class="section-heading">
+              <div>
+                <h2>Игроки за столом <span>10</span></h2>
+                <p>Выберите карточку, чтобы управлять игроком</p>
+              </div>
+              <span class="private-label"
+                ><app-icon name="shield" />Видно только судье</span
+              >
+            </div>
+            <div class="players-grid">
+              @for (p of game().state.players; track p.seat) {
+              <button
+                class="player-select"
+                [class.selected]="selected() === p.seat"
+                [attr.aria-label]="'Игрок ' + p.seat + ': ' + p.name"
+                [attr.aria-pressed]="selected() === p.seat"
+                (click)="select(p.seat)"
+              >
+                <app-player-card
+                  [player]="p"
+                  [state]="game().state"
+                  [gameId]="game().id"
+                /><span class="selected-check"><app-icon name="check" /></span>
+              </button>
+              }
+            </div>
+          </section>
+          <section class="voting-panel">
+            <div class="section-heading">
+              <div>
+                <h2>Голосование</h2>
+                <p>Выставленные игроки в текущем раунде</p>
+              </div>
+              <button
+                class="text-button"
+                (click)="change('Голосование очищено', clearNominees)"
+                [disabled]="saving() || !game().state.nominees.length"
+              >
+                Очистить
+              </button>
+            </div>
+            <div class="nominee-seats">
+              @for (p of game().state.players; track p.seat) {
+              <button
+                [class.nominated]="game().state.nominees.includes(p.seat)"
+                (click)="nominate(p.seat)"
+                [disabled]="saving()"
+                [attr.aria-label]="'На голосовании: игрок ' + p.seat"
+                [attr.aria-pressed]="game().state.nominees.includes(p.seat)"
+              >
+                {{ p.seat }}@if (game().state.nominees.includes(p.seat)) {
+                <span></span> }
+              </button>
+              }
+            </div>
+          </section>
+        </div>
+        <aside class="inspector">
+          <div class="inspector-heading">
+            <span class="inspector-seat"
+              >{{ selected() < 10 ? '0' + selected() : selected() }}</span
+            >
+            <div>
+              <h2>{{ player().name }}</h2>
+              <span>Управление игроком</span>
+            </div>
+            <div class="inspector-arrows">
+              <button
+                class="icon-button"
+                aria-label="Предыдущий игрок"
+                (click)="select(selected() === 1 ? 10 : selected() - 1)"
+              >
+                <app-icon name="chevron" /></button
+              ><button
+                class="icon-button"
+                aria-label="Следующий игрок"
+                (click)="select(selected() === 10 ? 1 : selected() + 1)"
+              >
+                <app-icon name="chevron" />
+              </button>
+            </div>
+          </div>
+          <div class="inspector-tabs" role="tablist">
+            <button
+              role="tab"
+              [attr.aria-selected]="tab() === 'player'"
+              [class.active]="tab() === 'player'"
+              (click)="tab.set('player')"
+            >
+              Игрок</button
+            ><button
+              role="tab"
+              [attr.aria-selected]="tab() === 'testament'"
+              [class.active]="tab() === 'testament'"
+              (click)="tab.set('testament')"
+            >
+              Лучший ход</button
+            ><button
+              role="tab"
+              [attr.aria-selected]="tab() === 'checks'"
+              [class.active]="tab() === 'checks'"
+              (click)="tab.set('checks')"
+            >
+              Проверки
+            </button>
+          </div>
+          <div class="inspector-body">
+            @if (tab() === 'player') {
+            <label class="field-label" for="player-name">Имя игрока</label>
+            <div class="input-action">
+              <input
+                id="player-name"
+                [(ngModel)]="draftName"
+                maxlength="50"
+                (keydown.enter)="saveName()"
+              /><button
+                class="icon-button"
+                title="Сохранить имя"
+                (click)="saveName()"
+                [disabled]="saving()"
+              >
+                <app-icon name="check" />
+              </button>
+            </div>
+            <span class="field-label">Роль в партии</span>
+            <div class="role-options">
+              @for (r of roles; track r.value) {
+              <button
+                [class.chosen]="player().role === r.value"
+                [attr.data-role]="r.value"
+                (click)="assignRole(r.value)"
+                [disabled]="saving()"
+              >
+                <i></i>{{ r.label }}@if (player().role === r.value) {
+                <app-icon name="check" /> }
+              </button>
+              }
+            </div>
+            <span class="field-label">Статус игрока</span>
+            <div class="status-options">
+              <button
+                [class.chosen]="player().status === 'ALIVE'"
+                (click)="status('ALIVE')"
+                [disabled]="saving()"
+              >
+                <span class="status-alive-dot"></span>В игре</button
+              ><button
+                [class.chosen]="player().status === 'SHOT'"
+                (click)="status('SHOT')"
+                [disabled]="saving()"
+              >
+                <app-icon name="target" />Застрелен</button
+              ><button
+                [class.chosen]="player().status === 'VOTED'"
+                (click)="status('VOTED')"
+                [disabled]="saving()"
+              >
+                <app-icon name="vote" />Выбыл
+              </button>
+            </div>
+            <button
+              class="switch-row"
+              [attr.aria-pressed]="player().pu"
+              (click)="togglePu()"
+              [disabled]="saving()"
+            >
+              <span>Статус ПУ</span
+              ><span class="toggle" [class.on]="player().pu"><i></i></span>
+            </button>
+            <div class="inspector-divider"></div>
+            <button
+              class="speak-button"
+              [class.is-speaking]="game().state.speaker === selected()"
+              (click)="speak(game().state.speaker === selected() ? null : selected())"
+              [disabled]="saving() || player().status !== 'ALIVE'"
+            >
+              <app-icon name="mic" />{{ game().state.speaker === selected() ?
+              'Завершить выступление' : 'Передать слово' }}<span
+                class="key-hint"
+                >{{ selected() }}</span
+              >
+            </button>
+            <div class="inspector-divider"></div>
+            <div class="photo-row">
+              <app-icon name="camera" />
+              <div>
+                <strong>Фотография</strong><small>{{ photoSource() }}</small>
+              </div>
+              <label class="icon-button upload-button" title="Загрузить фото"
+                ><app-icon name="upload" /><input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  (change)="upload($event)"
+              /></label>
+            </div>
+            @if (player().photo) {
+            <button class="text-button photo-remove" (click)="removePhoto()">
+              Удалить индивидуальное фото
+            </button>
+            }
+            <button
+              class="switch-row reveal-player"
+              [attr.aria-pressed]="player().revealRole"
+              (click)="reveal()"
+              [disabled]="saving()"
+            >
+              <span
+                ><app-icon name="eye" />Открыть роль зрителям<small
+                  >Только для этого игрока</small
+                ></span
+              ><span class="toggle" [class.on]="player().revealRole"
+                ><i></i
+              ></span>
+            </button>
+            } @if (tab() === 'testament') {
+            <h3 class="inspector-subtitle">
+              Лучший ход игрока {{ selected() }}
+            </h3>
+            <p class="helper">ЛХ остаётся цветным после выбывания игрока.</p>
+            <div class="segmented">
+              <button
+                [class.active]="testamentMode === 'COLORS'"
+                (click)="testamentMode = 'COLORS'"
+              >
+                Цвета</button
+              ><button
+                [class.active]="testamentMode === 'WHEEL'"
+                (click)="testamentMode = 'WHEEL'"
+              >
+                Руль
+              </button>
+            </div>
+            @if (testamentMode === 'COLORS') { @for (i of [0,1,2]; track i) {
+            <div class="testament-pick">
+              <span>{{ i + 1 }}</span
+              ><select
+                [attr.aria-label]="'Игрок для цвета ' + (i + 1)"
+                [(ngModel)]="testamentSeats[i]"
+              >
+                <option [ngValue]="null">Не выбран</option>
+                @for (p of game().state.players; track p.seat) {
+                <option [ngValue]="p.seat">{{ p.seat }} · {{ p.name }}</option>
+                }</select
+              ><select
+                [attr.aria-label]="'Цвет ' + (i + 1)"
+                [(ngModel)]="testamentColors[i]"
+              >
+                <option value="CIVILIAN">Красный</option>
+                <option value="MAFIA">Чёрный</option>
+              </select>
+            </div>
+            } } @else {
+            <label class="field-label" for="wheel"
+              >Игрок, которому оставлен руль</label
+            ><select id="wheel" [(ngModel)]="wheel">
+              @for (p of game().state.players; track p.seat) {
+              <option [ngValue]="p.seat">{{ p.seat }} · {{ p.name }}</option>
+              }
+            </select>
+            }
+            <button
+              class="button primary full-width"
+              (click)="saveTestament()"
+              [disabled]="saving()"
+            >
+              Сохранить лучший ход</button
+            ><button
+              class="button secondary full-width"
+              (click)="clearTestament()"
+              [disabled]="saving()"
+            >
+              Удалить ЛХ
+            </button>
+            } @if (tab() === 'checks') {
+            <h3 class="inspector-subtitle">Проверки за столом</h3>
+            <p class="helper">
+              Проверки закрыты, пока вы явно не разрешите их показ.
+            </p>
+            <label class="field-label" for="check-by">Кто проверяет</label
+            ><select
+              id="check-by"
+              [(ngModel)]="checkBy"
+              (ngModelChange)="changeCheckBy()"
+            >
+              <option value="SHERIFF">Шериф</option>
+              <option value="DON">Дон</option>
+            </select>
+            <div class="two-fields">
+              <div>
+                <label class="field-label" for="check-seat">Номер игрока</label
+                ><select id="check-seat" [(ngModel)]="checkSeat">
+                  @for (p of game().state.players; track p.seat) {
+                  <option [ngValue]="p.seat">{{ p.seat }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label class="field-label" for="check-result">Результат</label
+                ><select id="check-result" [(ngModel)]="checkResult">
+                  @if (checkBy === 'SHERIFF') {
+                  <option value="RED">Мирный</option>
+                  <option value="BLACK">Мафия</option>
+                  } @else {
+                  <option value="SHERIFF">Шериф</option>
+                  <option value="NOT_SHERIFF">Не шериф</option>
+                  }
+                </select>
+              </div>
+            </div>
+            <label class="checkbox-label"
+              ><input type="checkbox" [(ngModel)]="checkPublished" />Разрешить
+              показ этой проверки</label
+            ><button
+              class="button primary full-width"
+              (click)="addCheck()"
+              [disabled]="saving()"
+            >
+              <app-icon name="plus" />Добавить проверку
+            </button>
+            <div class="inspector-divider"></div>
+            <button
+              class="switch-row"
+              (click)="toggleVisibility('showChecks')"
+              [disabled]="saving()"
+            >
+              <span>Показывать проверки в OBS</span
+              ><span class="toggle" [class.on]="game().state.showChecks"
+                ><i></i
+              ></span>
+            </button>
+            <div class="checks-list">
+              @for (c of game().state.checks; track c.id) {
+              <div class="check-item">
+                <span
+                  class="check-seat"
+                  [class.black-check]="c.result === 'BLACK' || c.result === 'SHERIFF'"
+                  >{{ c.seat }}</span
+                >
+                <div>
+                  <strong
+                    >{{ c.by === 'DON' ? 'Дон' : 'Шериф' }}: {{ checkLabel(c)
+                    }}</strong
+                  ><small
+                    >Раунд {{ c.round }} · {{ c.published &&
+                    game().state.showChecks ? 'В эфире' : 'Скрыта' }}</small
+                  >
+                </div>
+                <button
+                  class="icon-button"
+                  [title]="c.published ? 'Скрыть проверку' : 'Разрешить показ'"
+                  (click)="publishCheck(c.id)"
+                >
+                  <app-icon [name]="c.published ? 'eye' : 'hidden'" /></button
+                ><button
+                  class="icon-button"
+                  title="Удалить проверку"
+                  (click)="removeCheck(c.id)"
+                >
+                  <app-icon name="close" />
+                </button>
+              </div>
+              } @empty {
+              <p class="helper">Проверок пока нет.</p>
+              }
+            </div>
+            }
+          </div>
+          <div class="inspector-note">
+            <app-icon name="shield" /><span
+              >Изменения автоматически<br />сохраняются в вашей партии.</span
+            >
+          </div>
+        </aside>
+      </div>
+      @if (isDemo()) {
+      <div class="demo-banner">
+        <span class="demo-badge">Демо</span>
+        <p>
+          Попробуйте управление на примере партии. Данные хранятся только в этом
+          браузере.
+        </p>
+        <button (click)="user() ? go('library') : modal.set('auth')">
+          {{ user() ? 'Создать свою партию' : 'Войти и создать партию'
+          }}<app-icon name="chevron" />
+        </button>
+      </div>
+      } } @if (page() === 'library') {
+      <div class="page-heading">
+        <div>
+          <div class="context-line">Ваше рабочее пространство</div>
+          <h1>Турниры</h1>
+          <p>Выберите турнир, стол и партию для трансляции.</p>
+        </div>
+        <button class="button primary" (click)="modal.set('newTournament')">
+          <app-icon name="plus" />Создать турнир
+        </button>
+      </div>
+      <section class="library-search">
+        <div class="search-box">
+          <app-icon name="search" /><input
+            aria-label="Поиск турнира"
+            placeholder="Название турнира или идентификатор Polemica"
+            [(ngModel)]="search"
+            (keydown.enter)="searchTournaments()"
+          />
+        </div>
+        <select
+          aria-label="Источник турниров"
+          [(ngModel)]="searchSource"
+          (ngModelChange)="searchTournaments()"
+        >
+          <option value="LOCAL">Мои турниры</option>
+          <option value="POLEMICA">Polemica</option></select
+        ><button class="button secondary" (click)="searchTournaments()">
+          Найти
+        </button>
+      </section>
+      <div class="integration-notice">
+        <app-icon name="link" />
+        <div>
+          <strong>Polemica: ожидает подключения</strong>
+          <p>
+            Доступ к API не подтверждён. Создайте турнир вручную, чтобы начать
+            работу.
+          </p>
+        </div>
+        <button class="text-button" (click)="go('help')">Подробнее</button>
+      </div>
+      <div class="tournament-grid">
+        @for (t of tournaments(); track t.id) {
+        <button class="tournament-card" (click)="openTournament(t.id)">
+          <span class="tournament-art"><app-icon name="trophy" /></span
+          ><span class="tournament-card-content"
+            ><small
+              >{{ t.externalId ? 'Polemica ID: ' + t.externalId + ' · ручной
+              ввод' : 'Локальный турнир' }}</small
+            ><strong>{{ t.name }}</strong
+            ><span>Открыть столы <app-icon name="chevron" /></span
+          ></span>
+        </button>
+        } @empty {
+        <div class="empty-state">
+          <app-icon name="trophy" />
+          <h2>
+            {{ search ? 'Турниры не найдены' : 'Здесь будут ваши турниры' }}
+          </h2>
+          <p>
+            {{ search ? 'Попробуйте другое название или создайте турнир
+            вручную.' : 'Создайте первый турнир и добавьте партию на десять
+            игроков.' }}
+          </p>
+          <button class="button primary" (click)="modal.set('newTournament')">
+            Создать турнир
+          </button>
+        </div>
+        }
+      </div>
+      } @if (page() === 'tournament') {
+      <div class="page-heading">
+        <div>
+          <button class="back-link" (click)="go('library')">Турниры /</button>
+          <h1>{{ chosenTournament()?.name }}</h1>
+          <p>Выберите партию или добавьте новый стол.</p>
+        </div>
+        <button class="button primary" (click)="newGame()">
+          <app-icon name="plus" />Добавить партию
+        </button>
+      </div>
+      <div class="game-list">
+        @for (g of summaries(); track g.id) {
+        <button class="game-row" (click)="openGame(g.id)">
+          <span class="game-table-number">{{ g.tableNumber }}</span>
+          <div>
+            <strong>Стол {{ g.tableNumber }} · Партия {{ g.gameNumber }}</strong
+            ><small
+              >Обновлено {{ g.updatedAt | date:'dd.MM.yyyy HH:mm' }}</small
+            >
+          </div>
+          <span class="game-row-label">Открыть панель</span
+          ><app-icon name="chevron" />
+        </button>
+        } @empty {
+        <div class="empty-state">
+          <app-icon name="grid" />
+          <h2>Партий пока нет</h2>
+          <p>Добавьте партию и заполните состав игроков.</p>
+          <button class="button primary" (click)="newGame()">
+            Добавить партию
+          </button>
+        </div>
+        }
+      </div>
+      } @if (page() === 'settings') {
+      <div class="page-heading">
+        <div>
+          <div class="context-line">
+            {{ game().tournamentName }} / Партия {{ game().gameNumber }}
+          </div>
+          <h1>Оформление оверлея</h1>
+          <p>Единые цвета ролей, фотографии и размеры источника.</p>
+        </div>
+        <button
+          class="button primary"
+          (click)="saveSettings()"
+          [disabled]="saving()"
+        >
+          <app-icon name="check" />Сохранить оформление
+        </button>
+      </div>
+      <div class="settings-layout">
+        <section class="settings-section">
+          <h2>Палитра ролей</h2>
+          <p class="helper">Изменения применяются к карточкам и блокам ЛХ.</p>
+          <div class="color-settings">
+            <label
+              ><span>Мирный</span
+              ><input type="color" [(ngModel)]="settingsDraft.civilian" /><code
+                >{{ settingsDraft.civilian }}</code
+              ></label
+            ><label
+              ><span>Мафия</span
+              ><input type="color" [(ngModel)]="settingsDraft.mafia" /><code
+                >{{ settingsDraft.mafia }}</code
+              ></label
+            ><label
+              ><span>Дон и Шериф</span
+              ><input type="color" [(ngModel)]="settingsDraft.special" /><code
+                >{{ settingsDraft.special }}</code
+              ></label
+            >
+          </div>
+          <h2>Размер Browser Source</h2>
+          <div class="two-fields">
+            <div>
+              <label for="width" class="field-label">Ширина, px</label
+              ><input
+                id="width"
+                type="number"
+                min="640"
+                max="3840"
+                [(ngModel)]="settingsDraft.width"
+              />
+            </div>
+            <div>
+              <label for="height" class="field-label">Высота, px</label
+              ><input
+                id="height"
+                type="number"
+                min="360"
+                max="2160"
+                [(ngModel)]="settingsDraft.height"
+              />
+            </div>
+          </div>
+          <label class="checkbox-label"
+            ><input
+              type="checkbox"
+              [(ngModel)]="settingsDraft.transparent"
+            />Прозрачный фон для OBS</label
+          >
+        </section>
+        <section class="settings-section">
+          <h2>Фотографии ролей</h2>
+          <label class="checkbox-label"
+            ><input
+              type="checkbox"
+              [(ngModel)]="settingsDraft.useRolePhotos"
+            />Использовать фотографии ролей</label
+          >
+          <p class="helper">
+            В публичном оверлее фото роли используется только после раскрытия
+            роли.
+          </p>
+          @for (r of roles; track r.value) {
+          <div class="role-photo-row">
+            <span>{{ r.label }}</span
+            ><small
+              >{{ settingsDraft.rolePhotos[r.value] ? 'Фото загружено' : 'Не
+              задано' }}</small
+            ><label class="button secondary upload-button"
+              ><app-icon name="upload" />Загрузить<input
+                type="file"
+                accept="image/jpeg,image/png"
+                (change)="upload($event, r.value)" /></label
+            >@if (settingsDraft.rolePhotos[r.value]) {
+            <button
+              class="icon-button"
+              title="Удалить фото роли"
+              (click)="deleteRolePhoto(r.value)"
+            >
+              <app-icon name="close" />
+            </button>
+            }
+          </div>
+          }
+          <div class="settings-note">
+            <app-icon name="camera" />
+            <p>
+              Приоритет: фото судьи → фото открытой роли → фото Polemica →
+              изображение по умолчанию. JPG и PNG, до 5 МБ.
+            </p>
+          </div>
+        </section>
+      </div>
+      } @if (page() === 'history') {
+      <div class="page-heading">
+        <div>
+          <div class="context-line">
+            {{ game().tournamentName }} / Партия {{ game().gameNumber }}
+          </div>
+          <h1>История изменений</h1>
+          <p>Последние 50 версий. Восстановление создаёт новую запись.</p>
+        </div>
+        <button class="button secondary" (click)="loadHistory()">
+          Обновить
+        </button>
+      </div>
+      <section class="history-list">
+        @for (event of events(); track event.id) {
+        <div class="history-row">
+          <span class="history-version">{{ event.revision }}</span>
+          <div>
+            <strong>{{ event.description }}</strong
+            ><small>{{ event.createdAt | date:'dd.MM.yyyy HH:mm:ss' }}</small>
+          </div>
+          <button
+            class="button secondary"
+            (click)="restore(event)"
+            [disabled]="saving() || event.revision === game().revision"
+          >
+            Восстановить
+          </button>
+        </div>
+        } @empty {
+        <div class="empty-state">
+          <app-icon name="history" />
+          <h2>
+            {{ isDemo() ? 'История доступна в ваших партиях' : 'Изменений пока
+            нет' }}
+          </h2>
+          <p>Каждое сохранение партии записывается на сервере.</p>
+        </div>
+        }
+      </section>
+      } @if (page() === 'help') {
+      <div class="page-heading">
+        <div>
+          <div class="context-line">Справка</div>
+          <h1>От стола — к трансляции</h1>
+          <p>Всё, что нужно для первой партии.</p>
+        </div>
+        <button class="button primary" (click)="go('studio')">
+          Открыть панель судьи
+        </button>
+      </div>
+      <div class="help-layout">
+        <section class="settings-section">
+          <h2>Подключение OBS</h2>
+          <ol class="help-steps">
+            <li>
+              <strong>Создайте партию</strong>
+              <p>
+                Войдите, создайте турнир и добавьте партию. Заполните имена и
+                роли десяти игроков.
+              </p>
+            </li>
+            <li>
+              <strong>Скопируйте ссылку</strong>
+              <p>
+                Нажмите «Открыть OBS-оверлей». Ссылка даёт доступ только к
+                публичному состоянию этой партии.
+              </p>
+            </li>
+            <li>
+              <strong>Добавьте источник «Браузер»</strong>
+              <p>
+                Вставьте ссылку в OBS и укажите ширину и высоту из настроек.
+                Удалите стандартный CSS OBS, если нужен белый фон.
+              </p>
+            </li>
+            <li>
+              <strong>Управляйте эфиром</strong>
+              <p>
+                Изменения приходят автоматически. Предпросмотр показывает только
+                то, что доступно зрителям.
+              </p>
+            </li>
+          </ol>
+        </section>
+        <section class="settings-section">
+          <h2>Данные Polemica</h2>
+          <span class="integration-status">Доступ не подтверждён</span>
+          <p>
+            Документация API и условия доступа не предоставлены. Импорт
+            турниров, ролей, событий, фотографий, ЛХ, проверок и готовых очков
+            пока недоступен.
+          </p>
+          <p>
+            Все поля партии можно заполнить вручную. Сервис не рассчитывает
+            очки, результаты и рейтинг.
+          </p>
+          <h3>Как получить доступ</h3>
+          <p>
+            Уточните у команды Polemica официальный адрес API, способ
+            авторизации и разрешённые сценарии использования. Для подключения
+            нужны тестовый турнир, описание полей и ограничения частоты
+            запросов.
+          </p>
+          <h3>Секретные данные</h3>
+          <p>
+            Роли и проверки по умолчанию скрыты. Проверка появляется в OBS
+            только при включённом общем показе и разрешённом показе конкретной
+            проверки. Ссылку OBS можно отозвать и заменить.
+          </p>
+        </section>
+      </div>
+      }
+      <footer class="page-footer">
+        <span>Polemica Studio</span
+        ><span>Спортивная мафия. Внимание к каждому ходу.</span
+        ><span>v1.0</span>
+      </footer>
+    </main>
+  </div>
+</div>
+@if (toast()) {
+<div class="toast" role="status"><app-icon name="check" />{{ toast() }}</div>
+} @if (modal()) {
+<div class="modal-backdrop" (click)="modal.set(null)">
+  <section
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="modal() === 'auth' ? 'Вход в аккаунт' : modal() === 'obs' ? 'Подключение OBS' : 'Настройки'"
+    (click)="$event.stopPropagation()"
+  >
+    <button
+      class="modal-close icon-button"
+      aria-label="Закрыть"
+      (click)="modal.set(null)"
+    >
+      <app-icon name="close" />
+    </button>
+    @if (error()) {
+    <div class="error-banner" role="alert">{{ error() }}</div>
+    } @if (modal() === 'auth') {
+    <img class="modal-brand" src="/mark.svg" alt="" />
+    <h2>
+      {{ authMode === 'login' ? 'Добро пожаловать в студию' : 'Ваше место за
+      столом' }}
+    </h2>
+    <p>
+      {{ authMode === 'login' ? 'Войдите, чтобы сохранять турниры и управлять
+      эфиром.' : 'Создайте аккаунт судьи. Почту нужно подтвердить.' }}
+    </p>
+    <form (ngSubmit)="auth()">
+      @if (authMode === 'register') {
+      <label class="field-label" for="username">Логин</label
+      ><input
+        id="username"
+        name="username"
+        [(ngModel)]="username"
+        pattern="[a-zA-Z0-9_]{3,40}"
+        placeholder="judge01"
+        required
+        autocomplete="username"
+      /><small class="helper">3–40 латинских букв, цифр или знак _</small
+      ><label class="field-label" for="email">Электронная почта</label
+      ><input
+        id="email"
+        type="email"
+        name="email"
+        [(ngModel)]="email"
+        required
+        autocomplete="email"
+        placeholder="judge@example.com"
+      />
+      } @else { <label class="field-label" for="login">Почта или логин</label
+      ><input
+        id="login"
+        name="login"
+        [(ngModel)]="login"
+        required
+        autocomplete="username"
+        placeholder="judge@example.com"
+      />
+      }<label class="field-label" for="password">Пароль</label
+      ><input
+        id="password"
+        type="password"
+        name="password"
+        [(ngModel)]="password"
+        required
+        [attr.minlength]="authMode === 'register' ? 10 : null"
+        maxlength="72"
+        [attr.autocomplete]="authMode === 'register' ? 'new-password' : 'current-password'"
+        [placeholder]="authMode === 'register' ? 'Не меньше 10 символов' : 'Ваш пароль'"
+      /><button
+        class="button primary full-width"
+        type="submit"
+        [disabled]="saving()"
+      >
+        {{ saving() ? 'Подождите…' : authMode === 'login' ? 'Войти в студию' :
+        'Создать аккаунт' }}
+      </button>
+    </form>
+    @if (authMessage()) {
+    <div class="success-message">
+      {{ authMessage() }}@if (verificationUrl()) {
+      <a [href]="verificationUrl()">Подтвердить почту в локальном режиме</a> }
+    </div>
+    }<button
+      class="auth-mode-switch"
+      (click)="authMode = authMode === 'login' ? 'register' : 'login'; error.set(''); authMessage.set('')"
+    >
+      {{ authMode === 'login' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть
+      аккаунт? Войти' }}
+    </button>
+    } @if (modal() === 'obs') {
+    <span class="modal-feature-icon"><app-icon name="screen" /></span>
+    <h2>Ваш оверлей готов к эфиру</h2>
+    <p>Добавьте в OBS источник «Браузер» и вставьте эту ссылку.</p>
+    @if (isDemo()) {
+    <div class="notice-small">
+      Демо работает только в браузерах этого компьютера. Для реальной трансляции
+      создайте сохранённую партию.
+    </div>
+    }<label class="field-label" for="obs-link">Публичная ссылка</label
+    ><textarea
+      id="obs-link"
+      readonly
+      [value]="overlayUrl()"
+      rows="3"
+    ></textarea>
+    <div class="obs-size">
+      <span>Ширина<strong>{{ game().state.theme.width }} px</strong></span
+      ><span>Высота<strong>{{ game().state.theme.height }} px</strong></span
+      ><span
+        >Фон<strong
+          >{{ game().state.theme.transparent ? 'Прозрачный' : 'Белый' }}</strong
+        ></span
+      >
+    </div>
+    <button class="button primary full-width" (click)="copyLink()">
+      <app-icon name="copy" />Скопировать ссылку</button
+    ><a
+      class="button secondary full-width"
+      [href]="overlayUrl()"
+      target="_blank"
+      rel="noopener noreferrer"
+      ><app-icon name="external" />Открыть в новой вкладке</a
+    >
+    <div class="obs-security">
+      <app-icon name="shield" />
+      <p>
+        Ссылка показывает только разрешённые публичные данные. Не передавайте её
+        посторонним.
+      </p>
+    </div>
+    @if (!isDemo()) {
+    <button class="text-button danger" (click)="modal.set('rotate')">
+      Заменить ссылку и отключить старую
+    </button>
+    } } @if (modal() === 'rotate') {
+    <h2>Заменить ссылку оверлея?</h2>
+    <p>
+      Старая ссылка перестанет работать, включая подключённые источники OBS.
+      Новую ссылку нужно будет вставить в OBS.
+    </p>
+    <button
+      class="button primary full-width"
+      (click)="rotateLink()"
+      [disabled]="saving()"
+    >
+      Создать новую ссылку</button
+    ><button class="button secondary full-width" (click)="modal.set('obs')">
+      Вернуться
+    </button>
+    } @if (modal() === 'newTournament') {
+    <h2>Новый турнир</h2>
+    <p>Создайте локальный турнир для ручного управления.</p>
+    <form (ngSubmit)="createTournament()">
+      <label class="field-label" for="t-name">Название</label
+      ><input
+        id="t-name"
+        name="name"
+        [(ngModel)]="newName"
+        required
+        maxlength="150"
+        placeholder="Например, Кубок осени"
+      /><label class="field-label" for="external-id"
+        >Идентификатор Polemica <small>необязательно</small></label
+      ><input
+        id="external-id"
+        name="externalId"
+        [(ngModel)]="externalId"
+        maxlength="100"
+      />
+      <p class="helper">
+        Идентификатор сохраняется как справочная информация. Импорт пока
+        недоступен.
+      </p>
+      <button
+        class="button primary full-width"
+        type="submit"
+        [disabled]="saving()"
+      >
+        Создать турнир
+      </button>
+    </form>
+    } @if (modal() === 'newGame') {
+    <h2>Новая партия</h2>
+    <p>{{ chosenTournament()?.name }}</p>
+    <form (ngSubmit)="createGame()">
+      <div class="two-fields">
+        <div>
+          <label class="field-label" for="table-number">Номер стола</label
+          ><input
+            id="table-number"
+            name="table"
+            type="number"
+            [(ngModel)]="newTable"
+            min="1"
+            max="100"
+            required
+          />
+        </div>
+        <div>
+          <label class="field-label" for="game-number">Номер партии</label
+          ><input
+            id="game-number"
+            name="game"
+            type="number"
+            [(ngModel)]="newGameNumber"
+            min="1"
+            max="10000"
+            required
+          />
+        </div>
+      </div>
+      <label class="checkbox-label"
+        ><input type="checkbox" name="demo" [(ngModel)]="newDemo" />Заполнить
+        примером на 10 игроков</label
+      ><button
+        class="button primary full-width"
+        type="submit"
+        [disabled]="saving()"
+      >
+        Открыть панель судьи
+      </button>
+    </form>
+    }
+  </section>
+</div>
+} }
