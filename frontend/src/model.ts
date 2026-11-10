@@ -23,6 +23,7 @@ export interface Player {
 }
 export interface Check {
   id: string;
+  checker?: number;
   by: "DON" | "SHERIFF";
   seat: number;
   result: string;
@@ -33,6 +34,8 @@ export interface Theme {
   civilian: string;
   mafia: string;
   special: string;
+  sheriff: string;
+  don: string;
   transparent: boolean;
   width: number;
   height: number;
@@ -40,6 +43,13 @@ export interface Theme {
   rolePhotos: Partial<Record<Role, string>>;
 }
 export interface State {
+  schemaVersion: number;
+  rounds: Record<string, RoundData>;
+  firstDeparted: number | null;
+  winner: "CITY" | "MAFIA" | null;
+  phaseBeforeFinish: Phase | null;
+  speechEndsAt: number | null;
+  speechRemainingMs: number;
   players: Player[];
   nominees: number[];
   checks: Check[];
@@ -49,6 +59,49 @@ export interface State {
   speaker: number | null;
   showRoles: boolean;
   showChecks: boolean;
+}
+export interface RoundData {
+  nominees: number[];
+  votes: Record<string, number>;
+  eligibleVoters: number[];
+  spokenSeats: number[];
+  eliminated: number | null;
+}
+export function normalizeGame(g: Game): Game {
+  const s = g.state;
+  if ((s.schemaVersion ?? 0) < 2 && s.firstDeparted == null) {
+    const previous = s.players.filter((p) => p.pu && p.status !== "ALIVE");
+    if (previous.length === 1) s.firstDeparted = previous[0].seat;
+  }
+  s.schemaVersion = 2;
+  s.theme.sheriff ??= s.theme.special ?? "#efc34d";
+  s.theme.don ??= "#8b5cc7";
+  s.rounds ??= {};
+  s.rounds[s.round] ??= {
+    nominees: [...s.nominees],
+    votes: {},
+    eligibleVoters: [],
+    spokenSeats: [],
+    eliminated: null,
+  };
+  s.firstDeparted ??= null;
+  s.players.forEach((p) => (p.pu = s.firstDeparted === p.seat));
+  s.winner ??= null;
+  s.phaseBeforeFinish ??= null;
+  s.speechEndsAt ??= null;
+  s.speechRemainingMs ??= 60000;
+  return g;
+}
+export function roleColor(theme: Theme, role: Role): string {
+  return role === "UNKNOWN"
+    ? "#a3acb8"
+    : role === "CIVILIAN"
+      ? theme.civilian
+      : role === "MAFIA"
+        ? theme.mafia
+        : role === "DON"
+          ? theme.don
+          : theme.sheriff;
 }
 export interface Game {
   id: string;
@@ -108,8 +161,7 @@ export function photoId(
 ): string | null {
   return (
     player.photo ||
-    (state.theme.useRolePhotos &&
-    (!publicView || state.showRoles || player.revealRole)
+    (state.theme.useRolePhotos && (!publicView || state.showRoles)
       ? state.theme.rolePhotos[player.role]
       : null) ||
     player.importedPhoto ||
@@ -121,12 +173,13 @@ export function project(game: Game): Game {
     s = g.state;
   s.players.forEach((p) => {
     const image = photoId(s, p, true);
-    p.role = s.showRoles || p.revealRole ? p.role : "UNKNOWN";
+    p.role = s.showRoles ? p.role : "UNKNOWN";
     p.photo = image;
     p.importedPhoto = null;
     p.revealRole = false;
   });
-  s.checks = s.checks.filter((c) => s.showChecks && c.published);
+  s.checks = s.showChecks ? s.checks : [];
+  s.checks.forEach((c) => delete c.checker);
   s.theme.rolePhotos = {};
   s.theme.useRolePhotos = false;
   return g;
@@ -153,6 +206,13 @@ export function demoGame(): Game {
     revision: 0,
     updatedAt: new Date().toISOString(),
     state: {
+      schemaVersion: 2,
+      rounds: {},
+      firstDeparted: 3,
+      winner: null,
+      phaseBeforeFinish: null,
+      speechEndsAt: null,
+      speechRemainingMs: 60000,
       players: names.map((name, i) => ({
         seat: i + 1,
         name,
@@ -192,6 +252,8 @@ export function demoGame(): Game {
         civilian: "#e94549",
         mafia: "#262a32",
         special: "#efc34d",
+        sheriff: "#efc34d",
+        don: "#8b5cc7",
         transparent: false,
         width: 1920,
         height: 1080,

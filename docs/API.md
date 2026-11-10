@@ -43,14 +43,14 @@
 
 - `players`: десять объектов `{seat,name,role,status,pu,revealRole,photo,importedPhoto,testament}`. `photo` и `importedPhoto` — UUID загрузки, не внешняя ссылка. `importedPhoto` зарезервировано для адаптера.
 - `role`: `CIVILIAN | MAFIA | DON | SHERIFF`; `UNKNOWN` используется только в публичной проекции.
-- `status`: `ALIVE | SHOT | VOTED`. ПУ — независимый флаг.
+- `status`: `ALIVE | SHOT | VOTED`. ПУ — производный флаг единственного `firstDeparted`; независимо назначить несколько ПУ нельзя.
 - `speaker`: номер или `null`. Выбывшему игроку нельзя передать слово; UI автоматически снимает выступление при выбывании.
 - `phase`: `PREPARATION | DAY | VOTING | NIGHT | FINISHED`.
 - `round`: номер раунда; `nominees`: уникальные номера в хронологии выставления.
 - `testament`: `null` либо `{mode:'COLORS',colors:[{seat,color}],wheel:null}` (до трёх разных мест; цвет `CIVILIAN`/`MAFIA`) либо `{mode:'WHEEL',wheel:1,colors:[]}`.
-- `checks`: `{id,by,seat,result,round,published}`. `by=DON`: `SHERIFF | NOT_SHERIFF`; `by=SHERIFF`: `RED | BLACK`. Массив сохраняет хронологию добавления.
-- `showRoles`, `showChecks`: общие разрешения публичного показа.
-- `theme`: `{civilian,mafia,special,transparent,width,height,useRolePhotos,rolePhotos}`. Цвета `#RRGGBB`, ширина 640–3840, высота 360–2160. `rolePhotos` — отображение роли в UUID загрузки.
+- `checks`: `{id,by,seat,result,round,published}`. `checker` — номер назначенного Дона или Шерифа, роль `by` определяется сервером. Результат сервер вычисляет по роли цели: `by=DON`: `SHERIFF | NOT_SHERIFF`; `by=SHERIFF`: `RED | BLACK`. Переданный клиентом `result` игнорируется. Массив сохраняет хронологию добавления.
+- `showRoles`, `showChecks`: общие разрешения публичного показа всех ролей и всех проверок. Флаги `revealRole` и `published` устарели и больше не участвуют в разрешении показа.
+- `theme`: `{civilian,mafia,sheriff,don,transparent,width,height,useRolePhotos,rolePhotos}`. `special` сохранено как устаревший источник цвета Шерифа для миграции старых настроек. Цвета `#RRGGBB`, ширина 640–3840, высота 360–2160. `rolePhotos` — отображение роли в UUID загрузки.
 
 ## Публичные маршруты
 
@@ -73,3 +73,13 @@
 - После отзыва токена старые публичные сокеты закрываются. После выхода владельца приватный сокет закрывается при следующей отправке.
 
 Ошибки API имеют безопасное сообщение `{message}`. 400 — валидация, 401 — нужна сессия, 403 — CSRF/права/подтверждение почты, 404 — отсутствует или закрыто, 409 — конфликт, 413 — превышен размер загрузки, 429 — лимит, 503 — SMTP или неподключённый внешний API.
+
+## Игровые команды (10.11.2026)
+
+`POST /games/{id}/actions` — только с сессией владельца и CSRF. Тело: `{revision,type,seat?,candidate?}`; результат — актуальный `GameView`. Несовпадение ревизии возвращает 409.
+
+Типы: `PHASE_NEXT`, `PHASE_PREVIOUS`, `SPEECH_START` (seat), `SPEECH_NEXT`, `SPEECH_PAUSE`, `SPEECH_RESUME`, `VOTE` (seat — голосующий; candidate — за кого; null снимает голос), `VOTE_ELIMINATE` (seat — выбывший кандидат). Переходы фаз и управление часами через произвольный PUT запрещены: PUT остаётся для редактирования игроков, ЛХ, проверок, кандидатур и оформления.
+
+Новые поля state: `rounds` (ключ — номер раунда; `{nominees,votes,eligibleVoters,spokenSeats,eliminated}`), `firstDeparted` (один номер или null), `winner` (`CITY`/`MAFIA`/null), `phaseBeforeFinish`, `speechEndsAt` (Unix milliseconds/null), `speechRemainingMs`. `votes` — отображение номера голосующего в номер кандидатуры, поэтому голос игрока уникален. `eligibleVoters` фиксирует состав на начало голосования, чтобы исправление исторических голосов было возможно после выбывания участника.
+
+Полный набор назначенных ролей проверяется при начале партии. Победа рассчитывается для корректного состава (6 мирных, 2 мафии, Дон, Шериф); это не турнирный скоринг. Старый плоский список `nominees` сохранён как проекция текущего раунда.

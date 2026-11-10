@@ -55,6 +55,9 @@ interface TournamentRepository extends JpaRepository<Tournament, String> {
 @Entity
 @Table(name = "games")
 class Game {
+  @Column(name = "speech_deadline")
+  Instant speechDeadline;
+
   @Id String id;
 
   @Column(name = "tournament_id")
@@ -82,6 +85,8 @@ class Game {
 }
 
 interface GameRepository extends JpaRepository<Game, String> {
+  List<Game> findTop100BySpeechDeadlineLessThanEqual(Instant now);
+
   List<Game> findByTournamentIdAndOwnerIdOrderByTableNumberAscGameNumberAsc(
       String tournamentId, String ownerId);
 

@@ -31,6 +31,136 @@ class StudioIntegrationTest {
   @Autowired ObjectMapper mapper;
   @Autowired UserRepository users;
   @Autowired PasswordEncoder passwords;
+  @Autowired GameRepository games;
+
+  private JsonNode action(
+      MockHttpSession session,
+      JsonNode game,
+      String type,
+      Integer seat,
+      Integer candidate,
+      int expected)
+      throws Exception {
+    var body = new HashMap<String, Object>();
+    body.put("revision", game.get("revision").asLong());
+    body.put("type", type);
+    if (seat != null) body.put("seat", seat);
+    if (candidate != null) body.put("candidate", candidate);
+    var response =
+        mvc.perform(
+                post("/api/v1/games/" + game.get("id").asText() + "/actions")
+                    .session(session)
+                    .with(csrf())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(mapper.writeValueAsString(body)))
+            .andExpect(status().is(expected))
+            .andReturn();
+    return mapper.readTree(response.getResponse().getContentAsString());
+  }
+
+  @Test
+  void automaticChecksAndGlobalVisibilityIgnoreLegacyPerItemFlags() throws Exception {
+    var session = login();
+    var game = createGame(session);
+    var s = mapper.treeToValue(game.get("state"), GameState.class);
+    for (var by : List.of(GameState.Role.SHERIFF, GameState.Role.DON)) {
+      var c = new GameState.Check();
+      c.id = UUID.randomUUID().toString();
+      c.by = by;
+      c.seat = by == GameState.Role.DON ? 4 : 1;
+      c.result = "FORGED";
+      c.round = s.round;
+      c.published = false;
+      s.checks.add(c);
+    }
+    s.showChecks = true;
+    s.players.get(3).revealRole = true;
+    game = update(session, game, s, 200);
+    String id = game.get("id").asText(), t = token(session, id);
+    var pub =
+        mapper
+            .readTree(
+                mvc.perform(get("/api/v1/public/games/" + id).param("token", t))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .get("state");
+    assertThat(pub.get("checks").size()).isEqualTo(2);
+    assertThat(pub.get("checks").get(0).get("result").asText()).isEqualTo("RED");
+    assertThat(pub.get("checks").get(1).get("result").asText()).isEqualTo("SHERIFF");
+    for (var c : pub.get("checks")) assertThat(c.get("checker").isNull()).isTrue();
+    for (var p : pub.get("players")) assertThat(p.get("role").asText()).isEqualTo("UNKNOWN");
+    s = mapper.treeToValue(game.get("state"), GameState.class);
+    s.showChecks = false;
+    s.showRoles = true;
+    game = update(session, game, s, 200);
+    pub =
+        mapper
+            .readTree(
+                mvc.perform(get("/api/v1/public/games/" + id).param("token", t))
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString())
+            .get("state");
+    assertThat(pub.get("checks").size()).isZero();
+    for (var p : pub.get("players")) assertThat(p.get("role").asText()).isNotEqualTo("UNKNOWN");
+  }
+
+  @Test
+  void actionsProtectOwnershipRevisionsAndPersistRoundHistory() throws Exception {
+    var session = login();
+    var other = login();
+    var g = createGame(session);
+    action(other, g, "PHASE_NEXT", null, null, 404);
+    mvc.perform(
+            post("/api/v1/games/" + g.get("id").asText() + "/actions")
+                .session(session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"revision\":0,\"type\":\"PHASE_NEXT\"}"))
+        .andExpect(status().isForbidden());
+    var voting = action(session, g, "PHASE_NEXT", null, null, 200);
+    action(session, g, "PHASE_NEXT", null, null, 409);
+    action(session, voting, "VOTE", 3, 2, 400);
+    g = action(session, voting, "VOTE", 1, 2, 200);
+    g = action(session, g, "PHASE_NEXT", null, null, 200);
+    g = action(session, g, "PHASE_NEXT", null, null, 200);
+    assertThat(g.get("state").get("round").asInt()).isEqualTo(3);
+    g = action(session, g, "PHASE_PREVIOUS", null, null, 200);
+    g = action(session, g, "PHASE_PREVIOUS", null, null, 200);
+    assertThat(g.get("state").get("rounds").get("2").get("votes").get("1").asInt()).isEqualTo(2);
+    assertThat(g.get("state").get("nominees").size()).isEqualTo(3);
+  }
+
+  @Test
+  void schedulerAdvancesPersistedSpeechWithoutAJudgeBrowser() throws Exception {
+    var session = login();
+    var g = createGame(session);
+    g = action(session, g, "SPEECH_START", 4, null, 200);
+    var entity = games.findById(g.get("id").asText()).orElseThrow();
+    var state = mapper.readValue(entity.stateJson, GameState.class);
+    state.speechEndsAt = System.currentTimeMillis() - 10;
+    entity.speechDeadline = java.time.Instant.ofEpochMilli(state.speechEndsAt);
+    entity.stateJson = mapper.writeValueAsString(state);
+    games.saveAndFlush(entity);
+    long until = System.currentTimeMillis() + 6000;
+    Game current;
+    do {
+      Thread.sleep(50);
+      current = games.findById(entity.id).orElseThrow();
+    } while (mapper.readValue(current.stateJson, GameState.class).speaker == 4
+        && System.currentTimeMillis() < until);
+    var advanced = mapper.readValue(current.stateJson, GameState.class);
+    assertThat(advanced.speaker).isEqualTo(5);
+    assertThat(current.speechDeadline).isNotNull();
+    g =
+        mapper.readTree(
+            mvc.perform(get("/api/v1/games/" + entity.id).session(session))
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+    action(session, g, "SPEECH_PAUSE", null, null, 200);
+  }
 
   private MockHttpSession login() throws Exception {
     var u = new StudioUser();
@@ -207,7 +337,7 @@ class StudioIntegrationTest {
     assertThat(pub.get("checks").size()).isZero();
     assertThat(pub.get("theme").get("rolePhotos").size()).isZero();
     assertThat(raw).doesNotContain("overlayToken", "ownerId", "password", "email");
-    state.players.get(3).revealRole = true;
+    state.showRoles = true;
     state.showChecks = true;
     g = update(session, g, state, 200);
     pub =
@@ -219,7 +349,7 @@ class StudioIntegrationTest {
                     .getContentAsString())
             .get("state");
     assertThat(pub.get("players").get(3).get("role").asText()).isEqualTo("SHERIFF");
-    assertThat(pub.get("players").get(5).get("role").asText()).isEqualTo("UNKNOWN");
+    assertThat(pub.get("players").get(5).get("role").asText()).isEqualTo("DON");
     assertThat(pub.get("checks").size()).isEqualTo(1);
   }
 

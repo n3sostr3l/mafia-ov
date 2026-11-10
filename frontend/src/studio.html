@@ -146,43 +146,98 @@
           </button>
         </div>
       </div>
-      <section class="game-toolbar" aria-label="Управление раундом">
-        <div class="phase-control">
-          <app-icon
-            [name]="game().state.phase === 'NIGHT' ? 'moon' : 'sun'"
-          /><select
-            aria-label="Фаза партии"
-            [ngModel]="game().state.phase"
-            (ngModelChange)="setPhase($event)"
-            [disabled]="saving()"
-          >
-            @for (phase of phases; track phase.value) {
-            <option [value]="phase.value">{{ phase.label }}</option>
-            }
-          </select>
+      <section class="game-toolbar phase-stepper" aria-label="Перемотчик фаз">
+        <button
+          class="button secondary"
+          aria-label="Предыдущая фаза"
+          (click)="stepPhase(-1)"
+          [disabled]="saving() || (game().state.phase === 'PREPARATION')"
+        >
+          <app-icon name="undo" />Назад
+        </button>
+        <div class="phase-position">
+          <strong>{{ phaseLabel(game().state.phase) }}</strong
+          ><span>Раунд {{ game().state.round }}</span>
         </div>
-        <div class="round-control">
-          <span>Раунд</span
-          ><button
-            (click)="round(-1)"
-            aria-label="Предыдущий раунд"
-            [disabled]="saving() || game().state.round <= 1"
+        <div class="phase-rail">
+          @for (phase of phases; track phase.value) {
+          <span [class.current]="game().state.phase === phase.value"
+            >{{ phase.label }}</span
           >
-            −</button
-          ><strong>{{ game().state.round }}</strong
-          ><button
-            (click)="round(1)"
-            aria-label="Следующий раунд"
-            [disabled]="saving() || game().state.round >= 100"
-          >
-            +
-          </button>
+          }
         </div>
-        <div class="toolbar-divider"></div>
         <span class="alive-count"
           ><app-icon name="users" /><strong>{{ alive() }}</strong> в игре</span
-        ><button class="next-day" (click)="nextRound()" [disabled]="saving()">
-          Следующий день<app-icon name="chevron" />
+        >
+        <button
+          class="button primary"
+          aria-label="Следующая фаза"
+          (click)="stepPhase(1)"
+          [disabled]="saving() || !!game().state.winner"
+        >
+          Далее<app-icon name="chevron" />
+        </button>
+      </section>
+      @if (game().state.winner) {
+      <div
+        class="winner-banner"
+        role="status"
+        [class.mafia-win]="game().state.winner === 'MAFIA'"
+      >
+        <app-icon name="trophy" /><strong
+          >{{ game().state.winner === 'CITY' ? 'Победа города' : 'Победа мафии'
+          }}</strong
+        ><span
+          >Партия завершена. Исправление статусов автоматически обновит
+          результат.</span
+        >
+      </div>
+      } @if (game().state.phase === 'DAY' && !game().state.winner) {
+      <section class="speech-panel">
+        <app-speech-clock [state]="game().state" />
+        <div class="speech-actions">
+          <button
+            class="button secondary"
+            (click)="action(game().state.speechEndsAt === null ? 'SPEECH_RESUME' : 'SPEECH_PAUSE')"
+            [disabled]="saving() || game().state.speaker === null"
+          >
+            {{ game().state.speechEndsAt === null ? 'Продолжить минуту' :
+            'Пауза' }}</button
+          ><button
+            class="button secondary"
+            (click)="action('SPEECH_NEXT')"
+            [disabled]="saving()"
+          >
+            Следующий выступающий<app-icon name="chevron" />
+          </button>
+        </div>
+        <p>
+          По окончании минуты слово переходит следующему живому игроку. После
+          круга речей начинается голосование.
+        </p>
+      </section>
+      }
+      <section class="broadcast-controls" aria-label="Отображение в OBS">
+        <button
+          class="switch-row"
+          [attr.aria-pressed]="game().state.showRoles"
+          (click)="toggleVisibility('showRoles')"
+          [disabled]="saving()"
+        >
+          <span>Показывать все роли в OBS</span
+          ><span class="toggle" [class.on]="game().state.showRoles"
+            ><i></i
+          ></span></button
+        ><button
+          class="switch-row"
+          [attr.aria-pressed]="game().state.showChecks"
+          (click)="toggleVisibility('showChecks')"
+          [disabled]="saving()"
+        >
+          <span>Показывать все проверки в OBS</span
+          ><span class="toggle" [class.on]="game().state.showChecks"
+            ><i></i
+          ></span>
         </button>
       </section>
       <div class="studio-layout">
@@ -214,8 +269,8 @@
                 (click)="toggleVisibility('showRoles')"
                 [disabled]="saving()"
               >
-                {{ game().state.showRoles ? 'Скрыть роли' : 'Открыть роли'
-                }}<app-icon name="chevron" />
+                {{ game().state.showRoles ? 'Скрыть все роли' : 'Открыть все
+                роли' }}<app-icon name="chevron" />
               </button>
             </div>
           </section>
@@ -266,7 +321,7 @@
               <button
                 [class.nominated]="game().state.nominees.includes(p.seat)"
                 (click)="nominate(p.seat)"
-                [disabled]="saving()"
+                [disabled]="saving() || p.status !== 'ALIVE' || !!game().state.winner"
                 [attr.aria-label]="'На голосовании: игрок ' + p.seat"
                 [attr.aria-pressed]="game().state.nominees.includes(p.seat)"
               >
@@ -275,6 +330,56 @@
               </button>
               }
             </div>
+            <div class="vote-results">
+              @for (seat of game().state.nominees; track seat) {
+              <div class="candidate-votes">
+                <strong
+                  >№ {{ seat }} · {{ votesFor(seat).length }} голосов</strong
+                ><span>{{ votesFor(seat).join(', ') || 'Голосов нет' }}</span
+                >@if (currentRound().eliminated === seat) {
+                <b>Выбыл по голосованию</b> }
+              </div>
+              }
+            </div>
+            @if (game().state.phase === 'VOTING') {
+            <label class="field-label" for="vote-candidate"
+              >За кого голосовали</label
+            ><select id="vote-candidate" [(ngModel)]="voteCandidate">
+              <option [ngValue]="null">Выберите кандидатуру</option>
+              @for (seat of game().state.nominees; track seat) {
+              <option [ngValue]="seat">
+                № {{ seat }} · {{ game().state.players[seat - 1].name }}
+              </option>
+              }
+            </select>
+            <p class="helper">
+              Отметьте проголосовавших. Один игрок может отдать голос только за
+              одну кандидатуру.
+            </p>
+            <div class="voter-seats">
+              @for (p of game().state.players; track p.seat) {
+              <button
+                [class.voted-for]="voteCandidate !== null && currentRound().votes[p.seat] === voteCandidate"
+                [disabled]="saving() || !currentRound().eligibleVoters.includes(p.seat) || voteCandidate === null"
+                [attr.aria-label]="'Голос игрока ' + p.seat"
+                [attr.aria-pressed]="voteCandidate !== null && currentRound().votes[p.seat] === voteCandidate"
+                (click)="vote(p.seat)"
+              >
+                {{ p.seat }}<small
+                  >{{ currentRound().votes[p.seat] ? 'за № ' +
+                  currentRound().votes[p.seat] : '—' }}</small
+                >
+              </button>
+              }
+            </div>
+            <button
+              class="button primary"
+              (click)="eliminateCandidate()"
+              [disabled]="saving() || voteCandidate === null || currentRound().eliminated !== null || !!game().state.winner"
+            >
+              Завершить голосование: выбыл № {{ voteCandidate ?? '—' }}
+            </button>
+            }
           </section>
         </div>
         <aside class="inspector">
@@ -380,21 +485,13 @@
                 <app-icon name="vote" />Выбыл
               </button>
             </div>
-            <button
-              class="switch-row"
-              [attr.aria-pressed]="player().pu"
-              (click)="togglePu()"
-              [disabled]="saving()"
-            >
-              <span>Статус ПУ</span
-              ><span class="toggle" [class.on]="player().pu"><i></i></span>
-            </button>
+
             <div class="inspector-divider"></div>
             <button
               class="speak-button"
               [class.is-speaking]="game().state.speaker === selected()"
               (click)="speak(game().state.speaker === selected() ? null : selected())"
-              [disabled]="saving() || player().status !== 'ALIVE'"
+              [disabled]="saving() || player().status !== 'ALIVE' || game().state.phase !== 'DAY' || !!game().state.winner"
             >
               <app-icon name="mic" />{{ game().state.speaker === selected() ?
               'Завершить выступление' : 'Передать слово' }}<span
@@ -421,16 +518,18 @@
             </button>
             }
             <button
-              class="switch-row reveal-player"
-              [attr.aria-pressed]="player().revealRole"
-              (click)="reveal()"
-              [disabled]="saving()"
+              class="switch-row"
+              [attr.aria-pressed]="game().state.firstDeparted === selected()"
+              (click)="firstDeparted()"
+              [disabled]="saving() || player().status === 'ALIVE'"
             >
               <span
-                ><app-icon name="eye" />Открыть роль зрителям<small
-                  >Только для этого игрока</small
+                >Первый ушедший (ПУ)<small
+                  >Только один игрок за партию</small
                 ></span
-              ><span class="toggle" [class.on]="player().revealRole"
+              ><span
+                class="toggle"
+                [class.on]="game().state.firstDeparted === selected()"
                 ><i></i
               ></span>
             </button>
@@ -498,44 +597,44 @@
             <p class="helper">
               Проверки закрыты, пока вы явно не разрешите их показ.
             </p>
-            <label class="field-label" for="check-by">Кто проверяет</label
+            <label class="field-label" for="check-checker"
+              >Проверяющий игрок</label
             ><select
-              id="check-by"
-              [(ngModel)]="checkBy"
-              (ngModelChange)="changeCheckBy()"
+              id="check-checker"
+              [ngModel]="checker()?.seat"
+              (ngModelChange)="checkChecker = $event"
             >
-              <option value="SHERIFF">Шериф</option>
-              <option value="DON">Дон</option>
+              @for (p of checkers(); track p.seat) {
+              <option [ngValue]="p.seat">
+                № {{ p.seat }} · {{ p.name }} · {{ roleLabel(p.role) }}
+              </option>
+              }
             </select>
-            <div class="two-fields">
-              <div>
-                <label class="field-label" for="check-seat">Номер игрока</label
-                ><select id="check-seat" [(ngModel)]="checkSeat">
-                  @for (p of game().state.players; track p.seat) {
-                  <option [ngValue]="p.seat">{{ p.seat }}</option>
-                  }
-                </select>
-              </div>
-              <div>
-                <label class="field-label" for="check-result">Результат</label
-                ><select id="check-result" [(ngModel)]="checkResult">
-                  @if (checkBy === 'SHERIFF') {
-                  <option value="RED">Мирный</option>
-                  <option value="BLACK">Мафия</option>
-                  } @else {
-                  <option value="SHERIFF">Шериф</option>
-                  <option value="NOT_SHERIFF">Не шериф</option>
-                  }
-                </select>
-              </div>
+            <p class="helper">
+              Роль проверяющего и результат определяются назначенными ролями.
+            </p>
+            <label class="field-label" for="check-seat">Проверяемый игрок</label
+            ><select id="check-seat" [(ngModel)]="checkSeat">
+              @for (p of game().state.players; track p.seat) {
+              <option [ngValue]="p.seat">№ {{ p.seat }} · {{ p.name }}</option>
+              }
+            </select>
+            @if (checker()) {
+            <div class="automatic-check">
+              <span>Результат автоматически</span
+              ><strong
+                [style.background]="checkColor(automaticCheck())"
+                [class.sheriff-result]="automaticCheck() === 'SHERIFF'"
+                >{{ checkLabel(automaticCheck()) }}</strong
+              >
             </div>
-            <label class="checkbox-label"
-              ><input type="checkbox" [(ngModel)]="checkPublished" />Разрешить
-              показ этой проверки</label
-            ><button
+            } @else {
+            <p class="helper">Сначала назначьте Дона или Шерифа.</p>
+            }
+            <button
               class="button primary full-width"
               (click)="addCheck()"
-              [disabled]="saving()"
+              [disabled]="saving() || !checker()"
             >
               <app-icon name="plus" />Добавить проверку
             </button>
@@ -555,7 +654,8 @@
               <div class="check-item">
                 <span
                   class="check-seat"
-                  [class.black-check]="c.result === 'BLACK' || c.result === 'SHERIFF'"
+                  [style.background]="checkColor(c.result)"
+                  [class.sheriff-result]="c.result === 'SHERIFF'"
                   >{{ c.seat }}</span
                 >
                 <div>
@@ -563,17 +663,11 @@
                     >{{ c.by === 'DON' ? 'Дон' : 'Шериф' }}: {{ checkLabel(c)
                     }}</strong
                   ><small
-                    >Раунд {{ c.round }} · {{ c.published &&
-                    game().state.showChecks ? 'В эфире' : 'Скрыта' }}</small
+                    >Раунд {{ c.round }} · {{ game().state.showChecks ? 'В
+                    эфире' : 'Скрыта' }}</small
                   >
                 </div>
                 <button
-                  class="icon-button"
-                  [title]="c.published ? 'Скрыть проверку' : 'Разрешить показ'"
-                  (click)="publishCheck(c.id)"
-                >
-                  <app-icon [name]="c.published ? 'eye' : 'hidden'" /></button
-                ><button
                   class="icon-button"
                   title="Удалить проверку"
                   (click)="removeCheck(c.id)"
@@ -745,9 +839,14 @@
                 >{{ settingsDraft.mafia }}</code
               ></label
             ><label
-              ><span>Дон и Шериф</span
-              ><input type="color" [(ngModel)]="settingsDraft.special" /><code
-                >{{ settingsDraft.special }}</code
+              ><span>Шериф</span
+              ><input type="color" [(ngModel)]="settingsDraft.sheriff" /><code
+                >{{ settingsDraft.sheriff }}</code
+              ></label
+            ><label
+              ><span>Дон</span
+              ><input type="color" [(ngModel)]="settingsDraft.don" /><code
+                >{{ settingsDraft.don }}</code
               ></label
             >
           </div>
@@ -931,8 +1030,8 @@
           <h3>Секретные данные</h3>
           <p>
             Роли и проверки по умолчанию скрыты. Проверка появляется в OBS
-            только при включённом общем показе и разрешённом показе конкретной
-            проверки. Ссылку OBS можно отозвать и заменить.
+            только при включённом общем показе. Ссылку OBS можно отозвать и
+            заменить.
           </p>
         </section>
       </div>

@@ -13,6 +13,16 @@ import { Api } from "./api";
 import { IconComponent } from "./icon";
 import { PlayerCardComponent } from "./player-card";
 import { OverlayComponent } from "./overlay";
+import { SpeechClockComponent } from "./speech-clock";
+import {
+  checkResult,
+  refreshChecks,
+  finishGame,
+  roundData,
+  demoAction,
+  nextSpeech,
+  expireSpeech,
+} from "./gameplay";
 import {
   Check,
   Game,
@@ -30,6 +40,8 @@ import {
   roleLabel,
   roles,
   phases,
+  normalizeGame,
+  roleColor,
 } from "./model";
 
 @Component({
@@ -41,6 +53,7 @@ import {
     IconComponent,
     PlayerCardComponent,
     OverlayComponent,
+    SpeechClockComponent,
   ],
   templateUrl: "./studio.html",
 })
@@ -103,10 +116,17 @@ export class StudioComponent implements OnInit, OnDestroy {
   testamentSeats: (number | null)[] = [null, null, null];
   testamentColors: Role[] = ["MAFIA", "MAFIA", "MAFIA"];
   wheel = 1;
-  checkBy: "DON" | "SHERIFF" = "SHERIFF";
+  checkChecker = 4;
   checkSeat = 1;
-  checkResult = "RED";
-  checkPublished = false;
+  voteCandidate: number | null = null;
+  checkers = computed(() =>
+    this.game().state.players.filter(
+      (p) => p.role === "DON" || p.role === "SHERIFF",
+    ),
+  );
+  currentRound = computed(() => roundData(this.game().state));
+  roleColor = roleColor;
+  private demoTimer?: ReturnType<typeof setInterval>;
   settingsDraft!: State["theme"];
   mobileMenu = signal(false);
   integrationOpen = signal(false);
@@ -130,6 +150,18 @@ export class StudioComponent implements OnInit, OnDestroy {
       await this.loadOverlay();
       return;
     }
+    this.demoTimer = setInterval(() => {
+      const s = this.game().state;
+      if (
+        this.isDemo() &&
+        !this.saving() &&
+        s.speechEndsAt !== null &&
+        s.speechEndsAt <= Date.now()
+      )
+        void this.change("Минута завершена", (next) =>
+          expireSpeech(next, Date.now()),
+        );
+    }, 250);
     try {
       await this.api.csrf();
       const verify = this.route.snapshot.queryParamMap.get("verify");
@@ -165,14 +197,16 @@ export class StudioComponent implements OnInit, OnDestroy {
     this.destroyed = true;
     this.stopLive();
     clearTimeout(this.toastTimer);
+    clearInterval(this.demoTimer);
     window.removeEventListener("storage", this.storageListener);
   }
   readDemo(): Game {
     try {
       const g = JSON.parse(localStorage.getItem("polemica-demo-v1") || "null");
-      if (g?.id === "demo" && g.state?.players?.length === 10) return g;
+      if (g?.id === "demo" && g.state?.players?.length === 10)
+        return normalizeGame(g);
     } catch {}
-    return demoGame();
+    return normalizeGame(demoGame());
   }
   notify(message: string) {
     this.toast.set(message);
@@ -204,6 +238,20 @@ export class StudioComponent implements OnInit, OnDestroy {
         next = structuredClone(current);
       mutate(next.state);
       if (this.isDemo()) {
+        refreshChecks(next.state);
+        roundData(next.state).nominees = [...next.state.nominees];
+        roundData(next.state).votes = Object.fromEntries(
+          Object.entries(roundData(next.state).votes).filter(([, candidate]) =>
+            next.state.nominees.includes(candidate),
+          ),
+        );
+        if (
+          roundData(next.state).eliminated !== null &&
+          next.state.players[roundData(next.state).eliminated! - 1].status ===
+            "ALIVE"
+        )
+          roundData(next.state).eliminated = null;
+        finishGame(next.state);
         next.revision++;
         next.updatedAt = new Date().toISOString();
         this.game.set(next);
@@ -224,6 +272,7 @@ export class StudioComponent implements OnInit, OnDestroy {
     this.selected.set(seat);
     const p = this.game().state.players.find((p) => p.seat === seat);
     if (!p) return;
+    if (p.role === "DON" || p.role === "SHERIFF") this.checkChecker = p.seat;
     this.draftName = p.name;
     const t = p.testament;
     this.testamentMode = t?.mode ?? "COLORS";
@@ -238,14 +287,17 @@ export class StudioComponent implements OnInit, OnDestroy {
   }
   async status(status: Player["status"]) {
     await this.change("Статус игрока " + this.selected() + " изменён", (s) => {
-      s.players[this.selected() - 1].status = status;
-      if (status !== "ALIVE" && s.speaker === this.selected()) s.speaker = null;
-    });
-  }
-  async togglePu() {
-    await this.change("Статус ПУ изменён", (s) => {
-      const p = s.players[this.selected() - 1];
-      p.pu = !p.pu;
+      const p = s.players[this.selected() - 1],
+        old = p.status;
+      p.status = status;
+      if (status !== "ALIVE" && old === "ALIVE" && s.firstDeparted === null)
+        s.firstDeparted = p.seat;
+      if (status === "ALIVE" && s.firstDeparted === p.seat)
+        s.firstDeparted = null;
+      if (status !== "ALIVE" && s.speaker === p.seat) {
+        if (this.isDemo()) nextSpeech(s, Date.now());
+        else s.speaker = null;
+      }
     });
   }
   async saveName() {
@@ -266,12 +318,14 @@ export class StudioComponent implements OnInit, OnDestroy {
       this.notify("Сначала верните игрока в игру.");
       return;
     }
-    await this.change(
-      seat ? "Выступает игрок " + seat : "Выступление завершено",
-      (s) => (s.speaker = seat),
-    );
+    await this.action(seat === null ? "SPEECH_NEXT" : "SPEECH_START", seat);
   }
   async nominate(seat: number) {
+    if (
+      this.game().state.players[seat - 1].status !== "ALIVE" ||
+      this.game().state.winner
+    )
+      return;
     await this.change("Список голосования обновлён", (s) => {
       s.nominees = s.nominees.includes(seat)
         ? s.nominees.filter((n) => n !== seat)
@@ -284,37 +338,58 @@ export class StudioComponent implements OnInit, OnDestroy {
   deleteRolePhoto(role: Role) {
     delete this.settingsDraft.rolePhotos[role];
   }
-  async setPhase(value: string) {
-    await this.change("Фаза партии изменена", (s) => {
-      s.phase = value as State["phase"];
-      s.speaker = null;
+  async action(type: string, seat?: number | null, candidate?: number | null) {
+    if (this.isDemo()) {
+      await this.change("Игровое действие сохранено", (s) =>
+        demoAction({ ...this.game(), state: s }, type, seat, candidate),
+      );
+      return;
+    }
+    await this.run(async () => {
+      this.game.set(
+        await this.api.request<Game>(
+          "/games/" + this.game().id + "/actions",
+          "POST",
+          { revision: this.game().revision, type, seat, candidate },
+        ),
+      );
     });
   }
-  async round(delta: number) {
+  async stepPhase(direction: number) {
+    await this.action(direction > 0 ? "PHASE_NEXT" : "PHASE_PREVIOUS");
+  }
+  async firstDeparted() {
     await this.change(
-      "Раунд изменён",
-      (s) => (s.round = Math.max(1, Math.min(100, s.round + delta))),
+      "Первый ушедший изменён",
+      (s) =>
+        (s.firstDeparted =
+          s.firstDeparted === this.selected() ? null : this.selected()),
     );
   }
-  async nextRound() {
-    await this.change("Начат следующий день", (s) => {
-      s.round = Math.min(100, s.round + 1);
-      s.phase = "DAY";
-      s.speaker = null;
-      s.nominees = [];
-    });
+  votesFor(seat: number) {
+    return Object.entries(this.currentRound().votes)
+      .filter(([, target]) => target === seat)
+      .map(([voter]) => Number(voter));
+  }
+  async vote(voter: number) {
+    if (this.voteCandidate === null) return;
+    await this.action(
+      "VOTE",
+      voter,
+      this.currentRound().votes[voter] === this.voteCandidate
+        ? null
+        : this.voteCandidate,
+    );
+  }
+  async eliminateCandidate() {
+    if (this.voteCandidate !== null)
+      await this.action("VOTE_ELIMINATE", this.voteCandidate);
   }
   async toggleVisibility(field: "showRoles" | "showChecks") {
     await this.change(
       "Публичное отображение обновлено",
       (s) => (s[field] = !s[field]),
     );
-  }
-  async reveal() {
-    await this.change("Публичная роль игрока изменена", (s) => {
-      const p = s.players[this.selected() - 1];
-      p.revealRole = !p.revealRole;
-    });
   }
   async saveTestament() {
     const seats = this.testamentSeats.filter((n): n is number => n !== null);
@@ -342,18 +417,31 @@ export class StudioComponent implements OnInit, OnDestroy {
     );
     this.select(this.selected());
   }
-  changeCheckBy() {
-    this.checkResult = this.checkBy === "DON" ? "NOT_SHERIFF" : "RED";
+  checker(): Player | undefined {
+    return (
+      this.checkers().find((p) => p.seat === this.checkChecker) ??
+      this.checkers()[0]
+    );
+  }
+  automaticCheck() {
+    const p = this.checker();
+    return p ? checkResult(this.game().state, p.role, this.checkSeat) : "";
   }
   async addCheck() {
+    const checker = this.checker();
+    if (!checker) {
+      this.notify("Сначала назначьте Дона или Шерифа.");
+      return;
+    }
     await this.change("Проверка добавлена", (s) => {
       s.checks.push({
         id: crypto.randomUUID(),
-        by: this.checkBy,
+        by: checker.role as Check["by"],
+        checker: checker.seat,
         seat: this.checkSeat,
-        result: this.checkResult,
+        result: checkResult(s, checker.role, this.checkSeat),
         round: s.round,
-        published: this.checkPublished,
+        published: true,
       });
     });
   }
@@ -363,13 +451,7 @@ export class StudioComponent implements OnInit, OnDestroy {
       (s) => (s.checks = s.checks.filter((c) => c.id !== id)),
     );
   }
-  async publishCheck(id: string) {
-    await this.change("Видимость проверки изменена", (s) => {
-      const c = s.checks.find((c) => c.id === id)!;
-      c.published = !c.published;
-    });
-  }
-  checkLabel(check: Check) {
+  checkLabel(check: Check | string) {
     return (
       {
         RED: "Мирный",
@@ -377,7 +459,17 @@ export class StudioComponent implements OnInit, OnDestroy {
         SHERIFF: "Шериф",
         NOT_SHERIFF: "Не шериф",
       } as Record<string, string>
-    )[check.result];
+    )[typeof check === "string" ? check : check.result];
+  }
+  checkColor(result: string) {
+    const t = this.game().state.theme;
+    return result === "RED"
+      ? t.civilian
+      : result === "BLACK"
+        ? t.mafia
+        : result === "SHERIFF"
+          ? t.sheriff
+          : "#7d8797";
   }
   photoSource() {
     const p = this.player(),

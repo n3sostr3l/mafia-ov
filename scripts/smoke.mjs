@@ -56,7 +56,7 @@ try {
  assert.equal(publicState.state.players[3].photo, null, 'A hidden role must not select its role photo.');
  assert.deepEqual(publicState.state.theme.rolePhotos, {});
  await request(`/public/games/${id}/images/${image.id}?token=${token}`, 'GET', undefined, 404, true);
- game.state.players[3].revealRole = true;
+ game.state.showRoles = true;
  game = await request(`/games/${id}`, 'PUT', { revision: game.revision, state: game.state });
  publicState = await request(`/public/games/${id}?token=${token}`, 'GET', undefined, 200, true);
  assert.equal(publicState.state.players[3].photo, image.id);

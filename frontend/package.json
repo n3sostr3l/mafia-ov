@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "ng serve --host 127.0.0.1 --port 4200",
-    "build": "ng build"
+    "build": "ng build",
+    "test:gameplay": "node ../scripts/test-gameplay.mjs"
   },
   "dependencies": {
     "@angular/common": "21.2.0",

@@ -19,6 +19,7 @@ class GameService {
   final ObjectMapper mapper;
   final GameValidator validator;
   final ApplicationEventPublisher publisher;
+  final GameRules rules;
 
   GameService(
       GameRepository games,
@@ -26,13 +27,15 @@ class GameService {
       EventRepository events,
       ObjectMapper mapper,
       GameValidator validator,
-      ApplicationEventPublisher publisher) {
+      ApplicationEventPublisher publisher,
+      GameRules rules) {
     this.games = games;
     this.tournaments = tournaments;
     this.events = events;
     this.mapper = mapper;
     this.validator = validator;
     this.publisher = publisher;
+    this.rules = rules;
   }
 
   record Changed(String id, boolean tokenRotated) {}
@@ -109,7 +112,9 @@ class GameService {
 
   GameState state(Game g) {
     try {
-      return mapper.readValue(g.stateJson, GameState.class);
+      var s = mapper.readValue(g.stateJson, GameState.class);
+      rules.prepare(s);
+      return s;
     } catch (Exception e) {
       throw new IllegalStateException("Stored game is invalid", e);
     }
@@ -127,14 +132,15 @@ class GameService {
     var s = state(g);
     if (publicView) {
       for (var p : s.players) {
-        boolean revealed = s.showRoles || p.revealRole;
+        boolean revealed = s.showRoles;
         String image = effectivePhoto(s, p, revealed);
         p.role = revealed ? p.role : GameState.Role.UNKNOWN;
         p.photo = image;
         p.importedPhoto = null;
         p.revealRole = false;
       }
-      s.checks = s.checks.stream().filter(c -> s.showChecks && c.published).toList();
+      s.checks = s.showChecks ? s.checks : List.of();
+      s.checks.forEach(c -> c.checker = null);
       s.theme.rolePhotos = Map.of();
       s.theme.useRolePhotos = false;
     }
@@ -177,7 +183,14 @@ class GameService {
           HttpStatus.CONFLICT,
           "Партия изменилась в другой вкладке. Загрузите актуальное состояние.");
     validator.validate(state, user);
+    rules.update(state, state(g), Instant.now());
+    validator.validate(state, user);
+    return saveState(g, state, description);
+  }
+
+  private GameView saveState(Game g, GameState state, String description) {
     g.stateJson = json(state);
+    g.speechDeadline = state.speechEndsAt == null ? null : Instant.ofEpochMilli(state.speechEndsAt);
     g.updatedAt = Instant.now();
     games.saveAndFlush(g);
     event(g, description);
@@ -186,17 +199,55 @@ class GameService {
   }
 
   @Transactional
+  GameView action(
+      String id, String user, long revision, String type, Integer seat, Integer candidate) {
+    var g = games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+    if (g.revision != revision)
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Партия изменилась. Повторите действие после обновления.");
+    var s = state(g);
+    rules.action(s, type, seat, candidate, Instant.now());
+    validator.validate(s, user);
+    return saveState(
+        g,
+        s,
+        switch (type) {
+          case "PHASE_NEXT", "PHASE_PREVIOUS" -> "Переход по фазам";
+          case "VOTE" -> "Голос игрока " + seat;
+          case "VOTE_ELIMINATE" -> "Выбыл по голосованию игрок " + seat;
+          default -> "Управление минутой речи";
+        });
+  }
+
+  @Transactional
+  public void advanceDue(String id, Instant deadline) {
+    var g = games.lockById(id).orElseThrow(ApiErrors::missing);
+    var now = Instant.now();
+    if (g.speechDeadline == null
+        || !g.speechDeadline.equals(deadline)
+        || g.speechDeadline.isAfter(now)) return;
+    var s = state(g);
+    rules.expire(s, now);
+    validator.validate(s, g.ownerId);
+    saveState(g, s, "Минута завершена: автоматический переход речи");
+  }
+
+  @Transactional
   GameView restore(String id, String user, String eventId, long revision) {
     owned(id, user);
     var e =
         events.findById(eventId).filter(x -> x.gameId.equals(id)).orElseThrow(ApiErrors::missing);
     try {
-      return update(
-          id,
-          user,
-          revision,
-          mapper.readValue(e.stateJson, GameState.class),
-          "Восстановлена версия " + e.revision);
+      var g =
+          games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+      if (g.revision != revision)
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Партия изменилась.");
+      var restored = mapper.readValue(e.stateJson, GameState.class);
+      rules.prepare(restored);
+      restored.speechEndsAt = null; // Restoring history never revives an expired clock.
+      rules.normalizeChecks(restored);
+      validator.validate(restored, user);
+      return saveState(g, restored, "Восстановлена версия " + e.revision);
     } catch (com.fasterxml.jackson.core.JsonProcessingException x) {
       throw new IllegalStateException(x);
     }

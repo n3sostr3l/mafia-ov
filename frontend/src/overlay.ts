@@ -1,10 +1,11 @@
 import { Component, Input } from "@angular/core";
 import { Game, Check, phaseLabel } from "./model";
 import { PlayerCardComponent } from "./player-card";
+import { SpeechClockComponent } from "./speech-clock";
 @Component({
   selector: "app-overlay",
   standalone: true,
-  imports: [PlayerCardComponent],
+  imports: [PlayerCardComponent, SpeechClockComponent],
   template: `
     <div
       class="overlay-scene"
@@ -12,7 +13,7 @@ import { PlayerCardComponent } from "./player-card";
       [class.compact]="compact"
       [style.--civilian]="game.state.theme.civilian"
       [style.--mafia]="game.state.theme.mafia"
-      [style.--special]="game.state.theme.special"
+      [style.--special]="game.state.theme.sheriff"
     >
       <header class="overlay-header">
         <div class="overlay-tournament">
@@ -44,9 +45,9 @@ import { PlayerCardComponent } from "./player-card";
                 <div>
                   @for (check of checks(by); track check.id) {
                     <b
-                      [class.black-check]="
-                        check.result === 'BLACK' || check.result === 'SHERIFF'
-                      "
+                      class="result-check"
+                      [style.background]="checkColor(check.result)"
+                      [class.sheriff-result]="check.result === 'SHERIFF'"
                       [attr.title]="result(check)"
                       >{{ check.seat }}<small>{{ result(check) }}</small></b
                     >
@@ -57,6 +58,21 @@ import { PlayerCardComponent } from "./player-card";
           }
         </div>
       </header>
+      @if (game.state.winner) {
+        <div
+          class="overlay-winner"
+          [class.mafia-win]="game.state.winner === 'MAFIA'"
+          role="status"
+        >
+          <span>Партия завершена</span
+          ><strong>{{
+            game.state.winner === "CITY" ? "Победа города" : "Победа мафии"
+          }}</strong>
+        </div>
+      }
+      <div class="overlay-speech">
+        <app-speech-clock [state]="game.state" />
+      </div>
       <div class="overlay-players">
         @for (p of game.state.players; track p.seat) {
           <app-player-card
@@ -80,6 +96,16 @@ export class OverlayComponent {
   checkRoles = ["DON", "SHERIFF"] as const;
   checks(by: string) {
     return this.game.state.checks.filter((c) => c.by === by);
+  }
+  checkColor(result: string) {
+    const t = this.game.state.theme;
+    return result === "RED"
+      ? t.civilian
+      : result === "BLACK"
+        ? t.mafia
+        : result === "SHERIFF"
+          ? t.sheriff
+          : "#7d8797";
   }
   result(c: Check) {
     return (

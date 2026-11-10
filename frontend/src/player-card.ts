@@ -1,5 +1,5 @@
 import { Component, Input, OnChanges } from "@angular/core";
-import { Player, Role, State, photoId, roleLabel } from "./model";
+import { Player, Role, State, photoId, roleLabel, roleColor } from "./model";
 import { IconComponent } from "./icon";
 @Component({
   selector: "app-player-card",
@@ -9,7 +9,7 @@ import { IconComponent } from "./icon";
     <div
       class="player-visual"
       [class.eliminated]="player.status !== 'ALIVE'"
-      [class.special-role]="player.role === 'DON' || player.role === 'SHERIFF'"
+      [class.special-role]="player.role === 'SHERIFF'"
       [class.hidden-role]="player.role === 'UNKNOWN'"
       [class.speaking]="state.speaker === player.seat"
       [style.--role-color]="color(player.role)"
@@ -53,8 +53,8 @@ import { IconComponent } from "./icon";
       }
     </div>
     <div class="player-extras">
-      @if (player.pu) {
-        <span class="pu-block">ПУ</span>
+      @if (state.firstDeparted === player.seat) {
+        <span class="pu-block" title="Первый ушедший">ПУ</span>
       }
       @if (player.testament; as t) {
         @if (t.mode === "WHEEL") {
@@ -97,12 +97,6 @@ export class PlayerCardComponent implements OnChanges {
         : "/api/v1/uploads/" + id;
   }
   color(role: Role) {
-    return role === "UNKNOWN"
-      ? "#a3acb8"
-      : role === "CIVILIAN"
-        ? this.state.theme.civilian
-        : role === "MAFIA"
-          ? this.state.theme.mafia
-          : this.state.theme.special;
+    return roleColor(this.state.theme, role);
   }
 }

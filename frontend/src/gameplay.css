@@ -1,0 +1,412 @@
+.phase-stepper {
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.phase-position {
+  display: grid;
+  gap: 4px;
+  min-width: 95px;
+}
+.phase-position strong {
+  font-size: 13px;
+}
+.phase-position span {
+  font-size: 11px;
+  color: #778393;
+}
+.phase-rail {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  align-items: center;
+}
+.phase-rail > span {
+  font-size: 10px;
+  color: #a1a8b3;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+}
+.phase-rail .current {
+  color: #c9333b;
+  border-color: #df393f;
+  font-weight: 600;
+}
+.broadcast-controls {
+  display: flex;
+  gap: 26px;
+  padding: 14px 18px;
+  margin-bottom: 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.broadcast-controls .switch-row {
+  flex: 1;
+  font-size: 12px;
+  color: #526174;
+}
+.broadcast-controls .switch-row + button {
+  border-left: 1px solid var(--line);
+  padding-left: 25px;
+}
+.speech-panel {
+  padding: 16px 18px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 20px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.speech-panel app-speech-clock {
+  flex: 1;
+  min-width: 180px;
+}
+.speech-actions {
+  display: flex;
+  gap: 9px;
+}
+.speech-panel > p {
+  font-size: 10px;
+  color: #8793a4;
+  flex-basis: 100%;
+  line-height: 1.7;
+}
+.speech-clock-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: #67758a;
+  margin-bottom: 9px;
+}
+.speech-clock-label strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #354459;
+}
+.speech-track {
+  height: 5px;
+  background: #edf0f4;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.speech-track > span {
+  display: block;
+  height: 100%;
+  background: var(--red);
+  transition: width 0.1s linear;
+}
+.speech-clock.paused .speech-track > span {
+  background: #a3acbb;
+}
+.overlay-speech {
+  position: absolute;
+  top: 20%;
+  left: 3%;
+  width: 25%;
+  padding: 16px 22px;
+  border-radius: 12px;
+  background: #ffffffdf;
+  backdrop-filter: blur(12px);
+}
+.overlay-speech:not(:has(.speech-clock)) {
+  display: none;
+}
+.overlay-speech .speech-clock-label {
+  font-size: 20px;
+}
+.overlay-speech .speech-track {
+  height: 7px;
+}
+.compact .overlay-speech {
+  padding: 4px 0;
+  top: 32%;
+  left: 20px;
+  width: 30%;
+  background: transparent;
+  backdrop-filter: none;
+}
+.compact .overlay-speech .speech-clock-label {
+  font-size: 7px;
+  margin-bottom: 4px;
+}
+.compact .overlay-speech .speech-track {
+  height: 2px;
+}
+.winner-banner {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 18px 22px;
+  background: #fff1f2;
+  border: 1px solid #f3d1d4;
+  border-radius: 12px;
+  margin-bottom: 22px;
+  color: #b3303b;
+}
+.winner-banner strong {
+  font-size: 19px;
+  white-space: nowrap;
+}
+.winner-banner > span {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #927079;
+}
+.mafia-win.winner-banner {
+  background: #ececf2;
+  border-color: #d8d9e2;
+  color: #33323f;
+}
+.overlay-winner {
+  position: absolute;
+  top: 33%;
+  left: 25%;
+  right: 25%;
+  text-align: center;
+  background: #fff1f2e8;
+  border: 1px solid #f1d0d3;
+  backdrop-filter: blur(14px);
+  padding: 38px;
+  border-radius: 20px;
+  box-shadow: 0 10px 55px #b6373c0a;
+  color: #be303d;
+}
+.overlay-winner > span {
+  display: block;
+  font-size: 21px;
+  margin-bottom: 16px;
+  opacity: 0.7;
+}
+.overlay-winner > strong {
+  display: block;
+  font-size: 48px;
+  letter-spacing: -1px;
+}
+.overlay-winner.mafia-win {
+  background: #2d303de8;
+  border-color: #4b4e5d;
+  color: #fff;
+}
+.compact .overlay-winner {
+  top: 27%;
+  left: 32%;
+  right: 32%;
+  padding: 10px;
+  border-radius: 7px;
+}
+.compact .overlay-winner > span {
+  font-size: 6px;
+  margin-bottom: 4px;
+}
+.compact .overlay-winner > strong {
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.overlay-event-row b.result-check {
+  color: #fff;
+  border-color: #ffffff44;
+  min-height: 53px;
+}
+.result-check.sheriff-result,
+.check-seat.sheriff-result,
+.automatic-check strong.sheriff-result {
+  color: #514321 !important;
+}
+.overlay-event-row b.result-check small {
+  font-size: 10px;
+  opacity: 0.95;
+}
+.compact .overlay-event-row b.result-check {
+  min-height: 22px;
+}
+.compact .overlay-event-row b.result-check small {
+  font-size: 5px;
+}
+.automatic-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 17px 0;
+  font-size: 10px;
+  color: #8993a3;
+}
+.automatic-check strong {
+  background: var(--red);
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 5px;
+  font-weight: 600;
+}
+.vote-results {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.candidate-votes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  border-bottom: 1px solid #eef1f5;
+  padding: 8px 0;
+}
+.candidate-votes > span {
+  color: #8e98a8;
+}
+.candidate-votes > b {
+  margin-left: auto;
+  color: #b44952;
+  font-size: 10px;
+}
+.voter-seats {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
+  margin: 14px 0;
+}
+.voter-seats button {
+  border: 1px solid #e3e7ee;
+  border-radius: 7px;
+  padding: 8px 3px;
+  font-size: 12px;
+  background: #fff;
+  color: #7f8b9d;
+}
+.voter-seats small {
+  display: block;
+  font-size: 8px;
+  margin-top: 5px;
+}
+.voter-seats button.voted-for {
+  color: #c32e39;
+  background: #fff0f1;
+  border-color: #eaaab0;
+}
+.voter-seats button:disabled,
+.nominee-seats button:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+.first-departed-badge {
+  background: #fff;
+  border: 1px solid #bac6d5;
+  color: #63778f;
+  font-size: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.overlay-players .first-departed-badge {
+  font-size: 14px;
+  padding: 5px 7px;
+}
+.compact .overlay-players .first-departed-badge {
+  font-size: 5px;
+  padding: 1px 2px;
+}
+.role-options [data-role="DON"] i {
+  background: #8b5cc7;
+}
+.role-options [data-role="DON"].chosen {
+  background: #f5efff;
+  border-color: #d2bde9;
+  color: #77519f;
+}
+.inspector .switch-row small {
+  display: block;
+  font-size: 9px;
+  color: #abb2bd;
+  margin-top: 4px;
+}
+@media (max-width: 1190px) {
+  .phase-rail {
+    display: none;
+  }
+  .phase-stepper .alive-count {
+    margin-left: auto;
+  }
+  .phase-stepper .button {
+    padding: 10px;
+  }
+  .phase-position strong {
+    font-size: 12px;
+  }
+}
+@media (max-width: 700px) {
+  .broadcast-controls {
+    display: grid;
+    gap: 7px;
+    padding: 12px 15px;
+  }
+  .broadcast-controls .switch-row + button {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 12px 0 0;
+  }
+  .phase-stepper {
+    gap: 10px;
+  }
+  .phase-position {
+    min-width: 65px;
+  }
+  .phase-position span {
+    font-size: 10px;
+  }
+  .phase-stepper .alive-count {
+    font-size: 9px;
+  }
+  .phase-stepper .button {
+    padding: 9px;
+    font-size: 10px;
+  }
+  .speech-panel {
+    padding: 14px;
+    gap: 12px;
+  }
+  .speech-actions {
+    width: 100%;
+  }
+  .speech-actions .button {
+    flex: 1;
+    font-size: 10px;
+  }
+  .speech-clock-label {
+    font-size: 13px;
+  }
+  .speech-panel > p {
+    font-size: 11px;
+  }
+  .voter-seats {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .voter-seats button {
+    padding: 10px 3px;
+    font-size: 14px;
+  }
+  .voter-seats small {
+    font-size: 10px;
+  }
+  .winner-banner {
+    flex-wrap: wrap;
+    padding: 15px;
+  }
+  .winner-banner strong {
+    font-size: 18px;
+  }
+  .winner-banner > span {
+    flex-basis: 100%;
+  }
+  .automatic-check {
+    font-size: 11px;
+  }
+  .compact .overlay-speech {
+    left: 9px;
+    top: 33%;
+  }
+}

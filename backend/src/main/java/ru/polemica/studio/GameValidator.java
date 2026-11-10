@@ -70,11 +70,31 @@ class GameValidator {
           || !seats.contains(c.seat)
           || c.round < 1
           || c.round > 100
-          || !Set.of("RED", "BLACK", "SHERIFF", "NOT_SHERIFF")
-              .contains(c.result == null ? "" : c.result)
-          || (c.by == GameState.Role.DON && !Set.of("SHERIFF", "NOT_SHERIFF").contains(c.result))
-          || (c.by == GameState.Role.SHERIFF && !Set.of("RED", "BLACK").contains(c.result)))
+          || (c.checker != null && !seats.contains(c.checker)))
         throw ApiErrors.bad("Некорректная проверка Дона или Шерифа.");
+    if (s.firstDeparted != null && !seats.contains(s.firstDeparted))
+      throw ApiErrors.bad("Проверьте первого ушедшего.");
+    if (s.players.stream().filter(p -> p.pu).count() > 1)
+      throw ApiErrors.bad("ПУ может быть только один игрок.");
+    if (s.rounds == null || s.rounds.size() > 100)
+      throw ApiErrors.bad("Некорректная история раундов.");
+    for (var entry : s.rounds.entrySet()) {
+      var r = entry.getValue();
+      if (entry.getKey() < 1
+          || entry.getKey() > 100
+          || r == null
+          || r.nominees == null
+          || r.votes == null
+          || r.spokenSeats == null
+          || r.eligibleVoters == null
+          || !seats.containsAll(r.nominees)
+          || !seats.containsAll(r.spokenSeats)
+          || !seats.containsAll(r.eligibleVoters)
+          || !seats.containsAll(r.votes.keySet())
+          || !r.nominees.containsAll(r.votes.values())
+          || (r.eliminated != null && !seats.contains(r.eliminated)))
+        throw ApiErrors.bad("Некорректные данные голосования или речей раунда.");
+    }
     var t = s.theme;
     if (t.width < 640
         || t.width > 3840
@@ -85,7 +105,9 @@ class GameValidator {
         List.of(
             t.civilian == null ? "" : t.civilian,
             t.mafia == null ? "" : t.mafia,
-            t.special == null ? "" : t.special))
+            t.special == null ? "" : t.special,
+            t.sheriff == null ? "#efc34d" : t.sheriff,
+            t.don == null ? "" : t.don))
       if (!color.matches("#[0-9a-fA-F]{6}"))
         throw ApiErrors.bad("Цвет должен быть в формате #RRGGBB.");
     t.rolePhotos.forEach((role, image) -> photo(image, owner));

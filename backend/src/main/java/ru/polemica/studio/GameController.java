@@ -27,6 +27,16 @@ class GameController {
   record UpdateBody(
       @Min(0) long revision, @NotNull GameState state, @Size(max = 200) String description) {}
 
+  record ActionBody(
+      @Min(0) long revision, @NotBlank String type, Integer seat, Integer candidate) {}
+
+  @PostMapping("/games/{id}/actions")
+  GameService.GameView action(
+      Authentication auth, @PathVariable String id, @Valid @RequestBody ActionBody body) {
+    return service.action(
+        id, auth.getName(), body.revision(), body.type(), body.seat(), body.candidate());
+  }
+
   record TournamentView(String id, String name, String externalId, Instant createdAt) {}
 
   @GetMapping("/health")
