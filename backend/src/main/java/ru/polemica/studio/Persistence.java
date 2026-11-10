@@ -7,37 +7,9 @@ import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
 @Entity
-@Table(name = "studio_users")
-class StudioUser {
-  @Id String id;
-  String username;
-  String email;
-
-  @Column(name = "password_hash")
-  String passwordHash;
-
-  boolean verified;
-
-  @Column(name = "verify_hash")
-  String verifyHash;
-
-  @Column(name = "verify_expires")
-  Instant verifyExpires;
-}
-
-interface UserRepository extends JpaRepository<StudioUser, String> {
-  Optional<StudioUser> findByEmailOrUsername(String email, String username);
-
-  Optional<StudioUser> findByVerifyHash(String hash);
-}
-
-@Entity
 @Table(name = "tournaments")
 class Tournament {
   @Id String id;
-
-  @Column(name = "owner_id")
-  String ownerId;
 
   String name;
 
@@ -49,7 +21,7 @@ class Tournament {
 }
 
 interface TournamentRepository extends JpaRepository<Tournament, String> {
-  List<Tournament> findByOwnerIdOrderByCreatedAtDesc(String ownerId);
+  List<Tournament> findAllByOrderByCreatedAtDesc();
 }
 
 @Entity
@@ -62,9 +34,6 @@ class Game {
 
   @Column(name = "tournament_id")
   String tournamentId;
-
-  @Column(name = "owner_id")
-  String ownerId;
 
   @Column(name = "table_number")
   int tableNumber;
@@ -87,8 +56,7 @@ class Game {
 interface GameRepository extends JpaRepository<Game, String> {
   List<Game> findTop100BySpeechDeadlineLessThanEqual(Instant now);
 
-  List<Game> findByTournamentIdAndOwnerIdOrderByTableNumberAscGameNumberAsc(
-      String tournamentId, String ownerId);
+  List<Game> findByTournamentIdOrderByTableNumberAscGameNumberAsc(String tournamentId);
 
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @org.springframework.data.jpa.repository.Query("select g from Game g where g.id = :id")
@@ -121,9 +89,6 @@ interface EventRepository extends JpaRepository<GameEvent, String> {
 @Table(name = "uploads")
 class Upload {
   @Id String id;
-
-  @Column(name = "owner_id")
-  String ownerId;
 
   @Column(name = "created_at")
   Instant createdAt;

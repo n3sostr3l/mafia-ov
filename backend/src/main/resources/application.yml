@@ -11,29 +11,13 @@ spring:
     multipart:
       max-file-size: 5MB
       max-request-size: 6MB
-  mail:
-    host: ${SMTP_HOST:localhost}
-    port: ${SMTP_PORT:1025}
-    username: ${SMTP_USERNAME:}
-    password: ${SMTP_PASSWORD:}
-    properties:
-      mail.smtp.auth: ${SMTP_AUTH:false}
-      mail.smtp.starttls.enable: ${SMTP_TLS:false}
 server:
   error:
     include-message: never
     include-stacktrace: never
-  servlet:
-    session:
-      timeout: 8h
-      cookie:
-        http-only: true
-        secure: ${COOKIE_SECURE:true}
-        same-site: strict
 app:
   public-url: ${PUBLIC_URL:http://localhost:8088}
   uploads: ${UPLOAD_PATH:./data/uploads}
-  mail-from: ${MAIL_FROM:studio@localhost}
   dev: false
 logging:
   level:

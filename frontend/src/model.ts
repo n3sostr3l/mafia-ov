@@ -126,11 +126,6 @@ export interface GameSummary {
   revision: number;
   updatedAt: string;
 }
-export interface User {
-  id: string;
-  username: string;
-  email: string;
-}
 export interface GameEvent {
   id: string;
   revision: number;

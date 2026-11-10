@@ -52,30 +52,29 @@ class GameService {
 
   record Summary(String id, int tableNumber, int gameNumber, long revision, Instant updatedAt) {}
 
-  List<Tournament> tournamentsFor(String user) {
-    return tournaments.findByOwnerIdOrderByCreatedAtDesc(user);
+  List<Tournament> tournaments() {
+    return tournaments.findAllByOrderByCreatedAtDesc();
   }
 
   @Transactional
-  Tournament createTournament(String user, String name, String externalId) {
+  Tournament createTournament(String name, String externalId) {
     var t = new Tournament();
     t.id = UUID.randomUUID().toString();
-    t.ownerId = user;
     t.name = name.strip();
     t.externalId = externalId;
     t.createdAt = Instant.now();
     return tournaments.save(t);
   }
 
-  List<Summary> summaries(String id, String user) {
-    ownedTournament(id, user);
-    return games.findByTournamentIdAndOwnerIdOrderByTableNumberAscGameNumberAsc(id, user).stream()
+  List<Summary> summaries(String id) {
+    getTournament(id);
+    return games.findByTournamentIdOrderByTableNumberAscGameNumberAsc(id).stream()
         .map(g -> new Summary(g.id, g.tableNumber, g.gameNumber, g.revision, g.updatedAt))
         .toList();
   }
 
-  List<Map<String, Object>> history(String id, String user) {
-    owned(id, user);
+  List<Map<String, Object>> history(String id) {
+    getGame(id);
     return events.findTop50ByGameIdOrderByRevisionDesc(id).stream()
         .map(e ->
             Map.<String, Object>of(
@@ -90,15 +89,12 @@ class GameService {
         .toList();
   }
 
-  Game owned(String id, String user) {
-    return games.findById(id).filter(g -> g.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+  Game getGame(String id) {
+    return games.findById(id).orElseThrow(ApiErrors::missing);
   }
 
-  Tournament ownedTournament(String id, String user) {
-    return tournaments
-        .findById(id)
-        .filter(t -> t.ownerId.equals(user))
-        .orElseThrow(ApiErrors::missing);
+  Tournament getTournament(String id) {
+    return tournaments.findById(id).orElseThrow(ApiErrors::missing);
   }
 
   Game publicGame(String id, String token) {
@@ -157,17 +153,16 @@ class GameService {
   }
 
   @Transactional
-  GameView create(String tid, String user, int table, int number, boolean demo) {
-    ownedTournament(tid, user);
+  GameView create(String tid, int table, int number, boolean demo) {
+    getTournament(tid);
     if (table < 1 || table > 100 || number < 1 || number > 10000)
       throw ApiErrors.bad("Проверьте номер стола и партии.");
     var g = new Game();
     g.id = UUID.randomUUID().toString();
     g.tournamentId = tid;
-    g.ownerId = user;
     g.tableNumber = table;
     g.gameNumber = number;
-    g.overlayToken = AuthController.randomToken();
+    g.overlayToken = OverlayTokens.randomToken();
     g.stateJson = json(GameState.initial(demo));
     g.updatedAt = Instant.now();
     games.saveAndFlush(g);
@@ -176,15 +171,15 @@ class GameService {
   }
 
   @Transactional
-  GameView update(String id, String user, long revision, GameState state, String description) {
-    var g = games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+  GameView update(String id, long revision, GameState state, String description) {
+    var g = games.lockById(id).orElseThrow(ApiErrors::missing);
     if (g.revision != revision)
       throw new ResponseStatusException(
           HttpStatus.CONFLICT,
           "Партия изменилась в другой вкладке. Загрузите актуальное состояние.");
-    validator.validate(state, user);
+    validator.validate(state);
     rules.update(state, state(g), Instant.now());
-    validator.validate(state, user);
+    validator.validate(state);
     return saveState(g, state, description);
   }
 
@@ -199,15 +194,14 @@ class GameService {
   }
 
   @Transactional
-  GameView action(
-      String id, String user, long revision, String type, Integer seat, Integer candidate) {
-    var g = games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+  GameView action(String id, long revision, String type, Integer seat, Integer candidate) {
+    var g = games.lockById(id).orElseThrow(ApiErrors::missing);
     if (g.revision != revision)
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "Партия изменилась. Повторите действие после обновления.");
     var s = state(g);
     rules.action(s, type, seat, candidate, Instant.now());
-    validator.validate(s, user);
+    validator.validate(s);
     return saveState(
         g,
         s,
@@ -228,25 +222,24 @@ class GameService {
         || g.speechDeadline.isAfter(now)) return;
     var s = state(g);
     rules.expire(s, now);
-    validator.validate(s, g.ownerId);
+    validator.validate(s);
     saveState(g, s, "Минута завершена: автоматический переход речи");
   }
 
   @Transactional
-  GameView restore(String id, String user, String eventId, long revision) {
-    owned(id, user);
+  GameView restore(String id, String eventId, long revision) {
+    getGame(id);
     var e =
         events.findById(eventId).filter(x -> x.gameId.equals(id)).orElseThrow(ApiErrors::missing);
     try {
-      var g =
-          games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
+      var g = games.lockById(id).orElseThrow(ApiErrors::missing);
       if (g.revision != revision)
         throw new ResponseStatusException(HttpStatus.CONFLICT, "Партия изменилась.");
       var restored = mapper.readValue(e.stateJson, GameState.class);
       rules.prepare(restored);
       restored.speechEndsAt = null; // Restoring history never revives an expired clock.
       rules.normalizeChecks(restored);
-      validator.validate(restored, user);
+      validator.validate(restored);
       return saveState(g, restored, "Восстановлена версия " + e.revision);
     } catch (com.fasterxml.jackson.core.JsonProcessingException x) {
       throw new IllegalStateException(x);
@@ -254,9 +247,9 @@ class GameService {
   }
 
   @Transactional
-  String rotate(String id, String user) {
-    var g = games.lockById(id).filter(x -> x.ownerId.equals(user)).orElseThrow(ApiErrors::missing);
-    g.overlayToken = AuthController.randomToken();
+  String rotate(String id) {
+    var g = games.lockById(id).orElseThrow(ApiErrors::missing);
+    g.overlayToken = OverlayTokens.randomToken();
     games.saveAndFlush(g);
     publisher.publishEvent(new Changed(g.id, true));
     return g.overlayToken;

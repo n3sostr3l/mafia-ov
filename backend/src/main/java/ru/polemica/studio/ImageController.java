@@ -9,7 +9,6 @@ import java.util.*;
 import javax.imageio.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
-import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -31,8 +30,7 @@ class ImageController {
 
   @PostMapping("/uploads")
   @Transactional
-  Map<String, String> upload(Authentication auth, @RequestParam MultipartFile file)
-      throws IOException {
+  Map<String, String> upload(@RequestParam MultipartFile file) throws IOException {
     if (file.isEmpty()
         || file.getSize() > 5 * 1024 * 1024
         || !Set.of("image/png", "image/jpeg").contains(Objects.toString(file.getContentType(), "")))
@@ -71,7 +69,6 @@ class ImageController {
     graphics.dispose();
     var record = new Upload();
     record.id = UUID.randomUUID().toString();
-    record.ownerId = auth.getName();
     record.createdAt = Instant.now();
     ImageIO.write(clean, "png", root.resolve(record.id + ".png").toFile());
     uploads.save(record);
@@ -79,11 +76,8 @@ class ImageController {
   }
 
   @GetMapping("/uploads/{id}")
-  ResponseEntity<byte[]> image(Authentication auth, @PathVariable String id) throws IOException {
-    uploads
-        .findById(id)
-        .filter(u -> u.ownerId.equals(auth.getName()))
-        .orElseThrow(ApiErrors::missing);
+  ResponseEntity<byte[]> image(@PathVariable String id) throws IOException {
+    uploads.findById(id).orElseThrow(ApiErrors::missing);
     return response(id);
   }
 

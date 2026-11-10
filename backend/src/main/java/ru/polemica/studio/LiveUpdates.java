@@ -1,16 +1,12 @@
 package ru.polemica.studio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.HttpSession;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.*;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.*;
 import org.springframework.web.socket.*;
@@ -22,11 +18,9 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 @EnableWebSocket
 class WebSocketConfig implements WebSocketConfigurer {
   private final LiveUpdates live;
-  private final String origin;
 
-  WebSocketConfig(LiveUpdates live, @Value("${app.public-url}") String origin) {
+  WebSocketConfig(LiveUpdates live) {
     this.live = live;
-    this.origin = origin;
   }
 
   @Override
@@ -34,7 +28,7 @@ class WebSocketConfig implements WebSocketConfigurer {
     registry
         .addHandler(live, "/ws/games/*")
         .addInterceptors(live.guard())
-        .setAllowedOrigins(origin);
+        .setAllowedOriginPatterns("*");
   }
 }
 
@@ -73,15 +67,8 @@ class LiveUpdates extends TextWebSocketHandler {
             attrs.put("token", token);
             attrs.put("public", true);
           } else {
-            var principal = request.getPrincipal();
-            if (principal == null) return false;
-            service.owned(id, principal.getName());
+            service.getGame(id);
             attrs.put("public", false);
-            if (request instanceof ServletServerHttpRequest servlet) {
-              var session = servlet.getServletRequest().getSession(false);
-              if (session == null) return false;
-              attrs.put("session", session);
-            }
           }
           return true;
         } catch (Exception e) {
@@ -123,14 +110,7 @@ class LiveUpdates extends TextWebSocketHandler {
       Game g;
       if (pub) g = service.publicGame(id, (String) socket.getAttributes().get("token"));
       else {
-        var session = (HttpSession) socket.getAttributes().get("session");
-        var context =
-            (SecurityContext)
-                session.getAttribute(
-                    HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
-        if (context == null || context.getAuthentication() == null)
-          throw new IllegalStateException("Session expired");
-        g = service.owned(id, context.getAuthentication().getName());
+        g = service.getGame(id);
       }
       synchronized (socket) {
         if (socket.isOpen())

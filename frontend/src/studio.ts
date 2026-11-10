@@ -32,7 +32,6 @@ import {
   Role,
   State,
   Tournament,
-  User,
   demoGame,
   phaseLabel,
   photoId,
@@ -62,15 +61,12 @@ export class StudioComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   game = signal<Game>(this.readDemo());
-  user = signal<User | null>(null);
   selected = signal(4);
   page = signal<
     "studio" | "library" | "tournament" | "settings" | "history" | "help"
   >("studio");
   tab = signal<"player" | "testament" | "checks">("player");
-  modal = signal<
-    "auth" | "obs" | "newTournament" | "newGame" | "rotate" | null
-  >(null);
+  modal = signal<"obs" | "newTournament" | "newGame" | "rotate" | null>(null);
   isOverlay = location.pathname.startsWith("/overlay/");
   overlayReady = signal(false);
   overlayError = signal("");
@@ -104,13 +100,6 @@ export class StudioComponent implements OnInit, OnDestroy {
   newTable = 1;
   newGameNumber = 1;
   newDemo = false;
-  authMode: "login" | "register" = "login";
-  login = "";
-  username = "";
-  email = "";
-  password = "";
-  authMessage = signal("");
-  verificationUrl = signal("");
   draftName = "";
   testamentMode: "COLORS" | "WHEEL" = "COLORS";
   testamentSeats: (number | null)[] = [null, null, null];
@@ -163,32 +152,11 @@ export class StudioComponent implements OnInit, OnDestroy {
         );
     }, 250);
     try {
-      await this.api.csrf();
-      const verify = this.route.snapshot.queryParamMap.get("verify");
-      if (verify) {
-        const result = await this.api.request("/auth/verify", "POST", {
-          token: verify,
-        });
-        this.notify(result.message);
-        await this.router.navigate([], { queryParams: {}, replaceUrl: true });
-        this.modal.set("auth");
-      }
-      try {
-        this.user.set(await this.api.request<User>("/auth/me"));
-      } catch (e: any) {
-        if (e.status !== 401) throw e;
-      }
       const path = location.pathname;
-      if (path.startsWith("/games/")) {
-        if (this.user()) await this.loadGame(path.split("/")[2]);
-        else {
-          this.error.set("Войдите в аккаунт, чтобы открыть партию.");
-          this.modal.set("auth");
-        }
-      } else if (path.startsWith("/tournaments/")) {
-        if (this.user()) await this.openTournament(path.split("/")[2], false);
-        else this.modal.set("auth");
-      } else if (this.user() && path !== "/demo") await this.openLibrary(false);
+      if (path.startsWith("/games/")) await this.loadGame(path.split("/")[2]);
+      else if (path.startsWith("/tournaments/"))
+        await this.openTournament(path.split("/")[2], false);
+      else if (path !== "/demo") await this.openLibrary(false);
     } catch (e: any) {
       this.error.set(e.message);
     }
@@ -488,7 +456,7 @@ export class StudioComponent implements OnInit, OnDestroy {
       seat = this.selected();
     if (!file) return;
     if (this.isDemo()) {
-      this.notify("Войдите и создайте партию для загрузки фотографий.");
+      this.notify("Создайте сохранённую партию для загрузки фотографий.");
       input.value = "";
       return;
     }
@@ -538,10 +506,6 @@ export class StudioComponent implements OnInit, OnDestroy {
     this.mobileMenu.set(false);
     this.error.set("");
     if (page === "library") {
-      if (!this.user()) {
-        this.modal.set("auth");
-        return;
-      }
       await this.openLibrary();
       return;
     }
@@ -656,45 +620,6 @@ export class StudioComponent implements OnInit, OnDestroy {
     this.select(4);
     this.error.set("");
     await this.router.navigateByUrl("/demo");
-  }
-  async auth() {
-    this.authMessage.set("");
-    this.verificationUrl.set("");
-    await this.run(async () => {
-      if (this.authMode === "register") {
-        const res = await this.api.request("/auth/register", "POST", {
-          username: this.username,
-          email: this.email,
-          password: this.password,
-        });
-        this.authMessage.set(res.message);
-        this.verificationUrl.set(res.verificationUrl || "");
-        this.password = "";
-      } else {
-        this.user.set(
-          await this.api.request<User>("/auth/login", "POST", {
-            login: this.login,
-            password: this.password,
-          }),
-        );
-        this.password = "";
-        this.modal.set(null);
-        await this.api.csrf();
-        const path = location.pathname;
-        if (path.startsWith("/games/")) await this.loadGame(path.split("/")[2]);
-        else if (path.startsWith("/tournaments/"))
-          await this.openTournament(path.split("/")[2], false);
-        else await this.openLibrary();
-      }
-    });
-  }
-  async logout() {
-    await this.run(async () => {
-      await this.api.request("/auth/logout", "POST");
-      this.user.set(null);
-      await this.api.csrf();
-      await this.demo();
-    });
   }
   async loadHistory() {
     if (this.isDemo()) {

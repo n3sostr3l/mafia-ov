@@ -11,7 +11,7 @@ class GameValidator {
     this.uploads = uploads;
   }
 
-  void validate(GameState s, String owner) {
+  void validate(GameState s) {
     if (s == null
         || s.players == null
         || s.players.size() != 10
@@ -29,8 +29,8 @@ class GameValidator {
           || p.role == null
           || p.role == GameState.Role.UNKNOWN
           || p.status == null) throw ApiErrors.bad("Проверьте номера, имена и роли игроков.");
-      photo(p.photo, owner);
-      photo(p.importedPhoto, owner);
+      photo(p.photo);
+      photo(p.importedPhoto);
       if (p.testament != null) {
         var t = p.testament;
         if (t.mode == null || t.colors == null || t.colors.size() > 3)
@@ -110,14 +110,13 @@ class GameValidator {
             t.don == null ? "" : t.don))
       if (!color.matches("#[0-9a-fA-F]{6}"))
         throw ApiErrors.bad("Цвет должен быть в формате #RRGGBB.");
-    t.rolePhotos.forEach((role, image) -> photo(image, owner));
+    t.rolePhotos.forEach((role, image) -> photo(image));
     s.players.sort(Comparator.comparingInt(p -> p.seat));
   }
 
-  private void photo(String id, String owner) {
+  private void photo(String id) {
     if (id == null || id.isBlank()) return;
-    if (!id.matches("[a-f0-9-]{36}")
-        || uploads.findById(id).filter(u -> u.ownerId.equals(owner)).isEmpty())
-      throw ApiErrors.bad("Фотография не найдена или принадлежит другому пользователю.");
+    if (!id.matches("[a-f0-9-]{36}") || !uploads.existsById(id))
+      throw ApiErrors.bad("Фотография не найдена.");
   }
 }

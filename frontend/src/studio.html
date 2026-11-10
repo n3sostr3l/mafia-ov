@@ -50,23 +50,13 @@
       <button class="help-link" (click)="go('help')">
         <app-icon name="help" />Как это работает
       </button>
-      @if (user(); as u) {
-      <div class="account">
-        <span class="account-avatar">{{ u.username.slice(0, 1) }}</span>
-        <div><strong>{{ u.username }}</strong><small>Судья</small></div>
-        <button class="icon-button" title="Выйти" (click)="logout()">
-          <app-icon name="logout" />
-        </button>
-      </div>
-      } @else {
-      <button class="account login-account" (click)="modal.set('auth')">
+      <button class="account" (click)="go('library')">
         <span class="account-avatar"><app-icon name="users" /></span>
         <div>
-          <strong>Войти в аккаунт</strong><small>Сохраните свои партии</small>
+          <strong>Общее пространство</strong><small>Турниры и партии</small>
         </div>
         <app-icon name="chevron" />
       </button>
-      }
     </div>
   </aside>
   @if (mobileMenu()) {
@@ -695,15 +685,14 @@
           Попробуйте управление на примере партии. Данные хранятся только в этом
           браузере.
         </p>
-        <button (click)="user() ? go('library') : modal.set('auth')">
-          {{ user() ? 'Создать свою партию' : 'Войти и создать партию'
-          }}<app-icon name="chevron" />
+        <button (click)="go('library')">
+          Создать свою партию<app-icon name="chevron" />
         </button>
       </div>
       } } @if (page() === 'library') {
       <div class="page-heading">
         <div>
-          <div class="context-line">Ваше рабочее пространство</div>
+          <div class="context-line">Общее рабочее пространство</div>
           <h1>Турниры</h1>
           <p>Выберите турнир, стол и партию для трансляции.</p>
         </div>
@@ -725,7 +714,7 @@
           [(ngModel)]="searchSource"
           (ngModelChange)="searchTournaments()"
         >
-          <option value="LOCAL">Мои турниры</option>
+          <option value="LOCAL">Все турниры</option>
           <option value="POLEMICA">Polemica</option></select
         ><button class="button secondary" (click)="searchTournaments()">
           Найти
@@ -757,9 +746,7 @@
         } @empty {
         <div class="empty-state">
           <app-icon name="trophy" />
-          <h2>
-            {{ search ? 'Турниры не найдены' : 'Здесь будут ваши турниры' }}
-          </h2>
+          <h2>{{ search ? 'Турниры не найдены' : 'Здесь будут турниры' }}</h2>
           <p>
             {{ search ? 'Попробуйте другое название или создайте турнир
             вручную.' : 'Создайте первый турнир и добавьте партию на десять
@@ -981,8 +968,8 @@
             <li>
               <strong>Создайте партию</strong>
               <p>
-                Войдите, создайте турнир и добавьте партию. Заполните имена и
-                роли десяти игроков.
+                Создайте турнир и добавьте партию. Заполните имена и роли десяти
+                игроков.
               </p>
             </li>
             <li>
@@ -1052,7 +1039,7 @@
     class="modal"
     role="dialog"
     aria-modal="true"
-    [attr.aria-label]="modal() === 'auth' ? 'Вход в аккаунт' : modal() === 'obs' ? 'Подключение OBS' : 'Настройки'"
+    [attr.aria-label]="modal() === 'obs' ? 'Подключение OBS' : 'Настройки'"
     (click)="$event.stopPropagation()"
   >
     <button
@@ -1064,79 +1051,6 @@
     </button>
     @if (error()) {
     <div class="error-banner" role="alert">{{ error() }}</div>
-    } @if (modal() === 'auth') {
-    <img class="modal-brand" src="/mark.svg" alt="" />
-    <h2>
-      {{ authMode === 'login' ? 'Добро пожаловать в студию' : 'Ваше место за
-      столом' }}
-    </h2>
-    <p>
-      {{ authMode === 'login' ? 'Войдите, чтобы сохранять турниры и управлять
-      эфиром.' : 'Создайте аккаунт судьи. Почту нужно подтвердить.' }}
-    </p>
-    <form (ngSubmit)="auth()">
-      @if (authMode === 'register') {
-      <label class="field-label" for="username">Логин</label
-      ><input
-        id="username"
-        name="username"
-        [(ngModel)]="username"
-        pattern="[a-zA-Z0-9_]{3,40}"
-        placeholder="judge01"
-        required
-        autocomplete="username"
-      /><small class="helper">3–40 латинских букв, цифр или знак _</small
-      ><label class="field-label" for="email">Электронная почта</label
-      ><input
-        id="email"
-        type="email"
-        name="email"
-        [(ngModel)]="email"
-        required
-        autocomplete="email"
-        placeholder="judge@example.com"
-      />
-      } @else { <label class="field-label" for="login">Почта или логин</label
-      ><input
-        id="login"
-        name="login"
-        [(ngModel)]="login"
-        required
-        autocomplete="username"
-        placeholder="judge@example.com"
-      />
-      }<label class="field-label" for="password">Пароль</label
-      ><input
-        id="password"
-        type="password"
-        name="password"
-        [(ngModel)]="password"
-        required
-        [attr.minlength]="authMode === 'register' ? 10 : null"
-        maxlength="72"
-        [attr.autocomplete]="authMode === 'register' ? 'new-password' : 'current-password'"
-        [placeholder]="authMode === 'register' ? 'Не меньше 10 символов' : 'Ваш пароль'"
-      /><button
-        class="button primary full-width"
-        type="submit"
-        [disabled]="saving()"
-      >
-        {{ saving() ? 'Подождите…' : authMode === 'login' ? 'Войти в студию' :
-        'Создать аккаунт' }}
-      </button>
-    </form>
-    @if (authMessage()) {
-    <div class="success-message">
-      {{ authMessage() }}@if (verificationUrl()) {
-      <a [href]="verificationUrl()">Подтвердить почту в локальном режиме</a> }
-    </div>
-    }<button
-      class="auth-mode-switch"
-      (click)="authMode = authMode === 'login' ? 'register' : 'login'; error.set(''); authMessage.set('')"
-    >
-      {{ authMode === 'login' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть
-      аккаунт? Войти' }}
-    </button>
     } @if (modal() === 'obs') {
     <span class="modal-feature-icon"><app-icon name="screen" /></span>
     <h2>Ваш оверлей готов к эфиру</h2>
