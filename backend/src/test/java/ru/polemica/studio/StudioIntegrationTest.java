@@ -5,7 +5,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.fasterxml.jackson.databind.*;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.*;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -226,6 +232,64 @@ class StudioIntegrationTest {
         .andExpect(status().isBadRequest());
     s.players.getFirst().photo = "not-an-image";
     update(g, s, 400);
+  }
+
+  @Test
+  void uploadAppliesExifOrientationBeforeSavingJpeg() throws Exception {
+    var upload =
+        json(
+            mvc.perform(
+                    multipart("/api/v1/uploads")
+                        .file(
+                            new MockMultipartFile(
+                                "file",
+                                "portrait.jpg",
+                                "image/jpeg",
+                                jpegWithExifOrientationSix())))
+                .andExpect(status().isOk())
+                .andReturn());
+    byte[] normalizedBytes =
+        mvc.perform(get("/api/v1/uploads/" + upload.get("id").asText()))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsByteArray();
+    var normalized = ImageIO.read(new ByteArrayInputStream(normalizedBytes));
+
+    assertThat(normalized.getWidth()).isEqualTo(72);
+    assertThat(normalized.getHeight()).isEqualTo(48);
+    var topRight = new Color(normalized.getRGB(64, 8));
+    assertThat(topRight.getGreen()).isGreaterThan(topRight.getBlue());
+  }
+
+  private static byte[] jpegWithExifOrientationSix() throws Exception {
+    var image = new BufferedImage(48, 72, BufferedImage.TYPE_INT_RGB);
+    Graphics2D graphics = image.createGraphics();
+    graphics.setColor(Color.BLUE);
+    graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+    graphics.setColor(Color.GREEN);
+    graphics.fillRect(0, 0, 16, 16);
+    graphics.dispose();
+
+    var jpeg = new ByteArrayOutputStream();
+    ImageIO.write(image, "jpeg", jpeg);
+    byte[] encoded = jpeg.toByteArray();
+    byte[] exif = {
+      0x45, 0x78, 0x69, 0x66, 0, 0,
+      0x49, 0x49, 0x2a, 0, 8, 0, 0, 0,
+      1, 0, 0x12, 1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0,
+      0, 0, 0, 0
+    };
+    var withExif = new ByteArrayOutputStream();
+    withExif.write(encoded, 0, 2);
+    withExif.write(0xff);
+    withExif.write(0xe1);
+    int segmentLength = exif.length + 2;
+    withExif.write(segmentLength >> 8);
+    withExif.write(segmentLength);
+    withExif.write(exif);
+    withExif.write(encoded, 2, encoded.length - 2);
+    return withExif.toByteArray();
   }
 
   @Test
