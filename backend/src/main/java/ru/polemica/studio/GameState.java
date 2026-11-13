@@ -44,6 +44,7 @@ public class GameState {
   public static class Player {
     public int seat;
     public String name = "Игрок";
+    public String tournamentPlayerId;
     public Role role = Role.CIVILIAN;
     public Status status = Status.ALIVE;
     public boolean pu;

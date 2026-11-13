@@ -13,6 +13,7 @@ export interface Testament {
 export interface Player {
   seat: number;
   name: string;
+  tournamentPlayerId?: string | null;
   role: Role;
   status: Status;
   pu: boolean;
@@ -118,6 +119,11 @@ export interface Tournament {
   name: string;
   externalId: string | null;
   createdAt: string;
+}
+export interface TournamentPlayer {
+  id: string;
+  name: string;
+  photo: string | null;
 }
 export interface GameSummary {
   id: string;

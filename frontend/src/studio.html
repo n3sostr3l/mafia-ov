@@ -763,12 +763,103 @@
         <div>
           <button class="back-link" (click)="go('library')">Турниры /</button>
           <h1>{{ chosenTournament()?.name }}</h1>
-          <p>Выберите партию или добавьте новый стол.</p>
+          <p>Игроки турнира, их фото и партии хранятся вместе.</p>
         </div>
         <button class="button primary" (click)="newGame()">
           <app-icon name="plus" />Добавить партию
         </button>
       </div>
+      <details class="settings-section tournament-roster" open>
+        <summary class="roster-toggle">
+          <h2>Игроки турнира</h2>
+          <app-icon name="chevron" />
+        </summary>
+        <div class="roster-content">
+        <p class="helper">
+          Фото и ник игрока обновятся во всех партиях турнира.
+        </p>
+        @if (tournamentPlayers().length) {
+        <div class="roster-player-list">
+          @for (player of tournamentPlayers(); track player.id) {
+          <div class="roster-player-row">
+            @if (player.photo) {
+            <img
+              class="roster-player-photo"
+              [src]="'/api/v1/uploads/' + player.photo"
+              [alt]="'Фото ' + player.name"
+            />
+            } @else {
+            <span class="roster-player-photo empty"
+              ><app-icon name="users"
+            /></span>
+            }
+            <label class="roster-player-name">
+              <span class="field-label">Ник игрока</span>
+              <input
+                [id]="'roster-player-' + player.id"
+                [name]="'roster-player-' + player.id"
+                [(ngModel)]="player.name"
+                maxlength="50"
+              />
+            </label>
+            <label
+              class="icon-button upload-button"
+              [title]="'Фото игрока ' + player.name"
+            >
+              <app-icon name="upload" />
+              <input
+                type="file"
+                accept="image/jpeg,image/png"
+                [attr.aria-label]="'Загрузить фото: ' + player.name"
+                (change)="uploadTournamentPlayerPhoto($event, player)"
+              />
+            </label>
+            <button
+              class="icon-button"
+              [title]="'Сохранить профиль ' + player.name"
+              [disabled]="saving()"
+              (click)="saveTournamentPlayer(player)"
+            >
+              <app-icon name="check" />
+            </button>
+            @if (player.photo) {
+            <button
+              class="icon-button"
+              [title]="'Удалить фото ' + player.name"
+              [disabled]="saving()"
+              (click)="removeTournamentPlayerPhoto(player)"
+            >
+              <app-icon name="close" />
+            </button>
+            }
+          </div>
+          }
+        </div>
+        } @else {
+        <p class="helper">
+          Добавьте игроков здесь или задайте имена в первой партии — они
+          появятся в списке автоматически.
+        </p>
+        }
+        <div class="roster-add-player">
+          <input
+            aria-label="Ник нового игрока"
+            name="newRosterPlayerName"
+            [(ngModel)]="newRosterPlayerName"
+            maxlength="50"
+            placeholder="Ник нового игрока"
+            (keydown.enter)="$event.preventDefault(); addTournamentPlayer()"
+          />
+          <button
+            class="button secondary"
+            [disabled]="saving()"
+            (click)="addTournamentPlayer()"
+          >
+            <app-icon name="plus" />Добавить игрока
+          </button>
+        </div>
+        </div>
+      </details>
       <div class="game-list">
         @for (g of summaries(); track g.id) {
         <button class="game-row" (click)="openGame(g.id)">
@@ -1173,6 +1264,36 @@
           />
         </div>
       </div>
+      @if (tournamentPlayers().length) {
+      <section class="roster-picks">
+        <h3>Состав партии</h3>
+        <div class="roster-pick-grid">
+          @for (seat of rosterSeats; track seat) {
+          <label>
+            <span>Место {{ seat }}</span>
+            <select
+              [(ngModel)]="newGamePlayerIds[seat - 1]"
+              [name]="'player-' + seat"
+            >
+              <option [ngValue]="null">Не выбрано</option>
+              @for (player of tournamentPlayers(); track player.id) {
+              <option
+                [ngValue]="player.id"
+                [disabled]="newGamePlayerIds.includes(player.id) && newGamePlayerIds[seat - 1] !== player.id"
+              >
+                {{ player.name }}
+              </option>
+              }
+            </select>
+          </label>
+          }
+        </div>
+      </section>
+      } @else {
+      <p class="helper">
+        Игроков можно будет выбрать из списка после добавления имён в турнире.
+      </p>
+      }
       <label class="checkbox-label"
         ><input type="checkbox" name="demo" [(ngModel)]="newDemo" />Заполнить
         примером на 10 игроков</label

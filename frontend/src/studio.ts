@@ -32,6 +32,7 @@ import {
   Role,
   State,
   Tournament,
+  TournamentPlayer,
   demoGame,
   phaseLabel,
   photoId,
@@ -90,6 +91,8 @@ export class StudioComponent implements OnInit, OnDestroy {
   roleLabel = roleLabel;
   phaseLabel = phaseLabel;
   tournaments = signal<Tournament[]>([]);
+  tournamentPlayers = signal<TournamentPlayer[]>([]);
+  rosterSeats = Array.from({ length: 10 }, (_, i) => i + 1);
   summaries = signal<GameSummary[]>([]);
   chosenTournament = signal<Tournament | null>(null);
   events = signal<GameEvent[]>([]);
@@ -100,6 +103,8 @@ export class StudioComponent implements OnInit, OnDestroy {
   newTable = 1;
   newGameNumber = 1;
   newDemo = false;
+  newRosterPlayerName = "";
+  newGamePlayerIds: (string | null)[] = Array(10).fill(null);
   draftName = "";
   testamentMode: "COLORS" | "WHEEL" = "COLORS";
   testamentSeats: (number | null)[] = [null, null, null];
@@ -273,10 +278,49 @@ export class StudioComponent implements OnInit, OnDestroy {
       this.notify("Имя: от 1 до 50 символов.");
       return;
     }
-    await this.change(
-      "Имя игрока изменено",
-      (s) => (s.players[this.selected() - 1].name = this.draftName.trim()),
-    );
+    if (this.isDemo()) {
+      await this.change(
+        "Имя игрока изменено",
+        (s) => (s.players[this.selected() - 1].name = this.draftName.trim()),
+      );
+      return;
+    }
+
+    const current = this.player();
+    await this.run(async () => {
+      if (current.tournamentPlayerId) {
+        const profile = await this.saveTournamentPlayerRequest(
+          current.tournamentPlayerId,
+          this.draftName.trim(),
+          current.photo,
+        );
+        this.setTournamentPlayer(profile);
+        await this.reloadCurrentGame();
+      } else {
+        const profile = await this.api.request<TournamentPlayer>(
+          "/tournaments/" + this.game().tournamentId + "/players",
+          "POST",
+          { name: this.draftName.trim(), photo: current.photo },
+        );
+        const next = structuredClone(this.game());
+        const player = next.state.players[this.selected() - 1];
+        player.name = profile.name;
+        player.photo = profile.photo;
+        player.tournamentPlayerId = profile.id;
+        const saved = await this.api.request<Game>(
+          "/games/" + next.id,
+          "PUT",
+          {
+            revision: next.revision,
+            state: next.state,
+            description: "Имя игрока изменено",
+          },
+        );
+        this.game.set(saved);
+        this.setTournamentPlayer(profile);
+        this.notify("Имя игрока сохранено для всего турнира.");
+      }
+    });
   }
   async speak(seat: number | null) {
     if (
@@ -479,6 +523,25 @@ export class StudioComponent implements OnInit, OnDestroy {
       if (role) {
         this.settingsDraft.rolePhotos[role] = res.id;
         this.notify("Фото роли загружено. Сохраните оформление.");
+      } else if (
+        this.player().tournamentPlayerId ||
+        !this.isDefaultPlayerName(this.player().name, this.player().seat)
+      ) {
+        const player = this.player();
+        const profile = player.tournamentPlayerId
+          ? await this.saveTournamentPlayerRequest(
+              player.tournamentPlayerId,
+              player.name,
+              res.id,
+            )
+          : await this.api.request<TournamentPlayer>(
+              "/tournaments/" + this.game().tournamentId + "/players",
+              "POST",
+              { name: player.name, photo: res.id },
+            );
+        this.setTournamentPlayer(profile);
+        await this.reloadCurrentGame();
+        this.notify("Фото игрока сохранено для всего турнира.");
       } else
         await this.change(
           "Фотография игрока " + seat + " обновлена",
@@ -491,10 +554,53 @@ export class StudioComponent implements OnInit, OnDestroy {
     }
   }
   async removePhoto() {
-    await this.change(
-      "Индивидуальная фотография удалена",
-      (s) => (s.players[this.selected() - 1].photo = null),
+    const player = this.player();
+    if (this.isDemo() || !player.tournamentPlayerId) {
+      await this.change(
+        "Индивидуальная фотография удалена",
+        (s) => (s.players[this.selected() - 1].photo = null),
+      );
+      return;
+    }
+    await this.run(async () => {
+      const profile = await this.saveTournamentPlayerRequest(
+        player.tournamentPlayerId!,
+        player.name,
+        null,
+      );
+      this.setTournamentPlayer(profile);
+      await this.reloadCurrentGame();
+      this.notify("Фото удалено во всех партиях турнира.");
+    });
+  }
+  private async saveTournamentPlayerRequest(
+    playerId: string,
+    name: string,
+    photo: string | null,
+  ) {
+    return this.api.request<TournamentPlayer>(
+      "/tournaments/" +
+        (this.chosenTournament()?.id ?? this.game().tournamentId) +
+        "/players/" +
+        playerId,
+      "PUT",
+      { name, photo },
     );
+  }
+  private setTournamentPlayer(player: TournamentPlayer) {
+    this.tournamentPlayers.update((players) =>
+      players.some((entry) => entry.id === player.id)
+        ? players.map((entry) => (entry.id === player.id ? player : entry))
+        : [...players, player],
+    );
+  }
+  private async reloadCurrentGame() {
+    const game = await this.api.request<Game>("/games/" + this.game().id);
+    this.game.set(game);
+    this.select(this.selected());
+  }
+  private isDefaultPlayerName(name: string, seat: number) {
+    return name.trim() === "Игрок " + seat;
   }
   async saveSettings() {
     await this.change(
@@ -560,9 +666,11 @@ export class StudioComponent implements OnInit, OnDestroy {
       const data = await this.api.request<{
         tournament: Tournament;
         games: GameSummary[];
+        players: TournamentPlayer[];
       }>("/tournaments/" + id);
       this.chosenTournament.set(data.tournament);
       this.summaries.set(data.games);
+      this.tournamentPlayers.set(data.players);
       this.page.set("tournament");
       if (navigate) await this.router.navigateByUrl("/tournaments/" + id);
     } catch (e: any) {
@@ -571,10 +679,86 @@ export class StudioComponent implements OnInit, OnDestroy {
       this.loading.set(false);
     }
   }
+  async addTournamentPlayer() {
+    const name = this.newRosterPlayerName.trim();
+    if (!name || name.length > 50) {
+      this.notify("Имя: от 1 до 50 символов.");
+      return;
+    }
+    await this.run(async () => {
+      const player = await this.api.request<TournamentPlayer>(
+        "/tournaments/" + this.chosenTournament()!.id + "/players",
+        "POST",
+        { name },
+      );
+      if (!this.tournamentPlayers().some((p) => p.id === player.id))
+        this.tournamentPlayers.update((players) => [...players, player]);
+      this.newRosterPlayerName = "";
+    });
+  }
+  async saveTournamentPlayer(player: TournamentPlayer) {
+    await this.run(async () => {
+      const saved = await this.saveTournamentPlayerRequest(
+        player.id,
+        player.name,
+        player.photo,
+      );
+      this.setTournamentPlayer(saved);
+      player.name = saved.name;
+      this.notify("Профиль обновлён во всех партиях турнира.");
+    });
+  }
+  async uploadTournamentPlayerPhoto(event: Event, player: TournamentPlayer) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (
+      !["image/png", "image/jpeg"].includes(file.type) ||
+      file.size > 5 * 1024 * 1024
+    ) {
+      this.notify("Выберите JPG или PNG до 5 МБ.");
+      input.value = "";
+      return;
+    }
+    await this.run(async () => {
+      const form = new FormData();
+      form.append("file", file);
+      const uploaded = await this.api.request<{ id: string }>(
+        "/uploads",
+        "POST",
+        form,
+      );
+      const saved = await this.saveTournamentPlayerRequest(
+        player.id,
+        player.name,
+        uploaded.id,
+      );
+      this.setTournamentPlayer(saved);
+      player.photo = saved.photo;
+      this.notify("Фото игрока обновлено во всех партиях турнира.");
+    });
+    input.value = "";
+  }
+  async removeTournamentPlayerPhoto(player: TournamentPlayer) {
+    await this.run(async () => {
+      const saved = await this.saveTournamentPlayerRequest(
+        player.id,
+        player.name,
+        null,
+      );
+      this.setTournamentPlayer(saved);
+      player.photo = null;
+      this.notify("Фото удалено во всех партиях турнира.");
+    });
+  }
   newGame() {
     this.newTable = 1;
     this.newGameNumber =
       Math.max(0, ...this.summaries().map((g) => g.gameNumber)) + 1;
+    this.newGamePlayerIds =
+      this.tournamentPlayers().length === 10
+        ? this.tournamentPlayers().map((p) => p.id)
+        : Array(10).fill(null);
     this.modal.set("newGame");
   }
   async createGame() {
@@ -586,6 +770,7 @@ export class StudioComponent implements OnInit, OnDestroy {
           tableNumber: this.newTable,
           gameNumber: this.newGameNumber,
           demo: this.newDemo,
+          playerIds: this.newGamePlayerIds,
         },
       );
       this.modal.set(null);

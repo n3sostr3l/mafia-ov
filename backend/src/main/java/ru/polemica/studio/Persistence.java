@@ -25,6 +25,40 @@ interface TournamentRepository extends JpaRepository<Tournament, String> {
 }
 
 @Entity
+@Table(
+    name = "tournament_players",
+    uniqueConstraints =
+        @UniqueConstraint(
+            name = "uq_tournament_player_name",
+            columnNames = {"tournament_id", "normalized_name"}))
+class TournamentPlayer {
+  @Id String id;
+
+  @Column(name = "tournament_id")
+  String tournamentId;
+
+  String name;
+
+  @Column(name = "normalized_name")
+  String normalizedName;
+
+  @Column(name = "photo_id")
+  String photoId;
+
+  @Column(name = "created_at")
+  Instant createdAt;
+}
+
+interface TournamentPlayerRepository extends JpaRepository<TournamentPlayer, String> {
+  List<TournamentPlayer> findByTournamentIdOrderByCreatedAtAsc(String tournamentId);
+
+  Optional<TournamentPlayer> findByIdAndTournamentId(String id, String tournamentId);
+
+  Optional<TournamentPlayer> findByTournamentIdAndNormalizedName(
+      String tournamentId, String normalizedName);
+}
+
+@Entity
 @Table(name = "games")
 class Game {
   @Column(name = "speech_deadline")

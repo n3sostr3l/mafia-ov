@@ -235,6 +235,90 @@ class StudioIntegrationTest {
   }
 
   @Test
+  void tournamentPlayerSelectionAndProfileEditsApplyAcrossGames() throws Exception {
+    var firstGame = createGame();
+    var firstState = mapper.treeToValue(firstGame.get("state"), GameState.class);
+    firstState.players.getFirst().name = "Игрок турнира";
+    firstGame = update(firstGame, firstState, 200);
+    String tournamentId = firstGame.get("tournamentId").asText();
+
+    var tournament =
+        json(
+            mvc.perform(get("/api/v1/tournaments/" + tournamentId))
+                .andExpect(status().isOk())
+                .andReturn());
+    String playerId =
+        tournament.get("players").get(0).get("id").asText();
+
+    var secondGame =
+        postJson(
+            "/tournaments/" + tournamentId + "/games",
+            Map.of(
+                "tableNumber",
+                2,
+                "gameNumber",
+                2,
+                "demo",
+                false,
+                "playerIds",
+                java.util.stream.Stream.concat(
+                        java.util.stream.Stream.of(playerId),
+                        java.util.stream.Stream.generate(() -> null).limit(9))
+                    .toList()),
+            200);
+    var photoBytes = new java.io.ByteArrayOutputStream();
+    javax.imageio.ImageIO.write(
+        new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB),
+        "png",
+        photoBytes);
+    var photo =
+        json(
+            mvc.perform(
+                    multipart("/api/v1/uploads")
+                        .file(
+                            new MockMultipartFile(
+                                "file", "player.png", "image/png", photoBytes.toByteArray())))
+                .andExpect(status().isOk())
+                .andReturn());
+
+    mvc.perform(
+            put("/api/v1/tournaments/" + tournamentId + "/players/" + playerId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    mapper.writeValueAsString(
+                        Map.of(
+                            "name", "Новое имя",
+                            "photo", photo.get("id").asText()))))
+        .andExpect(status().isOk());
+
+    for (String gameId : List.of(firstGame, secondGame).stream()
+        .map(g -> g.get("id").asText())
+        .toList()) {
+      var game =
+          json(
+              mvc.perform(get("/api/v1/games/" + gameId))
+                  .andExpect(status().isOk())
+                  .andReturn());
+      assertThat(game.get("state").get("players").get(0).get("name").asText())
+          .isEqualTo("Новое имя");
+      assertThat(game.get("state").get("players").get(0).get("photo").asText())
+          .isEqualTo(photo.get("id").asText());
+      assertThat(game.get("state").get("players").get(0).get("tournamentPlayerId").asText())
+          .isEqualTo(playerId);
+    }
+
+    var duplicate =
+        json(
+            mvc.perform(
+                    post("/api/v1/tournaments/" + tournamentId + "/players")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("name", " новое ИМЯ "))))
+                .andExpect(status().isOk())
+                .andReturn());
+    assertThat(duplicate.get("id").asText()).isEqualTo(playerId);
+  }
+
+  @Test
   void uploadAppliesExifOrientationBeforeSavingJpeg() throws Exception {
     var upload =
         json(

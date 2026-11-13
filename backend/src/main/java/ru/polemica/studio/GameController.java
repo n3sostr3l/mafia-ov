@@ -21,7 +21,13 @@ class GameController {
       @NotBlank @Size(max = 150) String name, @Size(max = 100) String externalId) {}
 
   record GameBody(
-      @Min(1) @Max(100) int tableNumber, @Min(1) @Max(10000) int gameNumber, boolean demo) {}
+      @Min(1) @Max(100) int tableNumber,
+      @Min(1) @Max(10000) int gameNumber,
+      boolean demo,
+      @Size(min = 10, max = 10) List<String> playerIds) {}
+
+  record TournamentPlayerBody(
+      @NotBlank @Size(max = 50) String name, @Size(max = 36) String photo) {}
 
   record UpdateBody(
       @Min(0) long revision, @NotNull GameState state, @Size(max = 200) String description) {}
@@ -67,12 +73,30 @@ class GameController {
   @GetMapping("/tournaments/{id}")
   Map<String, Object> tournament(@PathVariable String id) {
     var t = service.getTournament(id);
-    return Map.of("tournament", tournamentView(t), "games", service.summaries(id));
+    return Map.of(
+        "tournament", tournamentView(t),
+        "games", service.summaries(id),
+        "players", service.tournamentPlayers(id));
+  }
+
+  @PostMapping("/tournaments/{id}/players")
+  GameService.TournamentPlayerView createTournamentPlayer(
+      @PathVariable String id, @Valid @RequestBody TournamentPlayerBody body) {
+    return service.createTournamentPlayer(id, body.name(), body.photo());
+  }
+
+  @PutMapping("/tournaments/{id}/players/{playerId}")
+  GameService.TournamentPlayerView updateTournamentPlayer(
+      @PathVariable String id,
+      @PathVariable String playerId,
+      @Valid @RequestBody TournamentPlayerBody body) {
+    return service.updateTournamentPlayer(id, playerId, body.name(), body.photo());
   }
 
   @PostMapping("/tournaments/{id}/games")
   GameService.GameView createGame(@PathVariable String id, @Valid @RequestBody GameBody body) {
-    return service.create(id, body.tableNumber(), body.gameNumber(), body.demo());
+    return service.create(
+        id, body.tableNumber(), body.gameNumber(), body.demo(), body.playerIds());
   }
 
   @GetMapping("/games/{id}")

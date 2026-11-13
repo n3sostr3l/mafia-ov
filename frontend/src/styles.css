@@ -29,6 +29,9 @@
 body {
   margin: 0;
 }
+:root:has(.obs-output) {
+  background: transparent;
+}
 button,
 input,
 select,
@@ -2003,6 +2006,96 @@ textarea {
   height: 16px;
   color: #abb5c4;
 }
+.tournament-roster {
+  margin-bottom: 24px;
+}
+.tournament-roster > .roster-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+}
+.tournament-roster > .roster-toggle::-webkit-details-marker {
+  display: none;
+}
+.tournament-roster > .roster-toggle h2 {
+  margin: 0;
+}
+.tournament-roster > .roster-toggle app-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 160ms ease;
+}
+.tournament-roster[open] > .roster-toggle app-icon {
+  transform: rotate(90deg);
+}
+.roster-content > .helper {
+  margin: 11px 0 25px;
+}
+.roster-player-list {
+  display: grid;
+  gap: 9px;
+}
+.roster-player-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) repeat(3, 36px);
+  gap: 10px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.roster-player-photo {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.roster-player-photo.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f5f8;
+  color: #9aa5b5;
+}
+.roster-player-name .field-label {
+  margin-bottom: 4px;
+}
+.roster-player-name input {
+  min-height: 34px;
+}
+.roster-add-player {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.roster-add-player input {
+  max-width: 360px;
+}
+.roster-picks {
+  margin-top: 20px;
+}
+.roster-picks h3 {
+  font-size: 11px;
+  font-weight: 550;
+  margin-bottom: 10px;
+}
+.roster-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+}
+.roster-pick-grid label span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 9px;
+  color: #8993a2;
+}
+.roster-pick-grid select {
+  min-height: 34px;
+  padding: 6px 8px;
+}
 .settings-layout,
 .help-layout {
   display: grid;
@@ -3252,6 +3345,25 @@ body:has(.obs-output) {
   }
   .settings-section {
     padding: 21px;
+  }
+  .roster-player-row {
+    grid-template-columns: 34px minmax(0, 1fr) repeat(3, 32px);
+    gap: 6px;
+    padding: 6px;
+  }
+  .roster-player-photo {
+    width: 34px;
+    height: 34px;
+  }
+  .roster-add-player {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .roster-add-player input {
+    max-width: none;
+  }
+  .roster-pick-grid {
+    grid-template-columns: 1fr;
   }
   .history-row {
     padding: 14px;
