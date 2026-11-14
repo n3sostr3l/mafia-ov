@@ -97,8 +97,7 @@ class GameService {
     getTournament(tournamentId);
     String cleanName = cleanPlayerName(name);
     String normalized = normalizePlayerName(cleanName);
-    var existing =
-        tournamentPlayers.findByTournamentIdAndNormalizedName(tournamentId, normalized);
+    var existing = tournamentPlayers.findByTournamentIdAndNormalizedName(tournamentId, normalized);
     if (existing.isPresent()) return playerView(existing.get());
     validatePhoto(photoId);
     var player = new TournamentPlayer();
@@ -218,8 +217,7 @@ class GameService {
   }
 
   @Transactional
-  GameView create(
-      String tid, int table, int number, boolean demo, List<String> playerIds) {
+  GameView create(String tid, int table, int number, boolean demo, List<String> playerIds) {
     getTournament(tid);
     if (table < 1 || table > 100 || number < 1 || number > 10000)
       throw ApiErrors.bad("Проверьте номер стола и партии.");
@@ -242,6 +240,7 @@ class GameService {
       }
     }
     applyRoster(g, state);
+    validateRoster(state);
     g.stateJson = json(state);
     g.updatedAt = Instant.now();
     games.saveAndFlush(g);
@@ -257,14 +256,16 @@ class GameService {
           HttpStatus.CONFLICT,
           "Партия изменилась в другой вкладке. Загрузите актуальное состояние.");
     applyRoster(g, state);
+    validateRoster(state);
     validator.validate(state);
     rules.update(state, state(g), Instant.now());
     validator.validate(state);
     return saveState(g, state, description);
   }
 
-  private GameView saveState(Game g, GameState state, String description) {
+  GameView saveState(Game g, GameState state, String description) {
     applyRoster(g, state);
+    validateRoster(state);
     g.stateJson = json(state);
     g.speechDeadline = state.speechEndsAt == null ? null : Instant.ofEpochMilli(state.speechEndsAt);
     g.updatedAt = Instant.now();
@@ -337,6 +338,69 @@ class GameService {
     return g.overlayToken;
   }
 
+  @Transactional
+  GameView move(String id, long revision, int table, int number, boolean swap) {
+    var g = games.lockById(id).orElseThrow(ApiErrors::missing);
+    if (g.revision != revision)
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "Партия изменилась.");
+    if (table < 1 || table > 100 || number < 1 || number > 10000)
+      throw ApiErrors.bad("Проверьте номер стола и партии.");
+    var occupied =
+        games.findByTournamentIdOrderByTableNumberAscGameNumberAsc(g.tournamentId).stream()
+            .filter(x -> !x.id.equals(id) && x.tableNumber == table && x.gameNumber == number)
+            .findFirst();
+    int oldTable = g.tableNumber, oldNumber = g.gameNumber;
+    if (occupied.isPresent()) {
+      if (!swap)
+        throw new ResponseStatusException(
+            HttpStatus.CONFLICT, "Место занято. Выберите обмен партиями.");
+      var other = games.lockById(occupied.get().id).orElseThrow(ApiErrors::missing);
+      g.tableNumber = -1;
+      g.gameNumber = -1;
+      games.saveAndFlush(g);
+      other.tableNumber = oldTable;
+      other.gameNumber = oldNumber;
+      other.updatedAt = Instant.now();
+      games.saveAndFlush(other);
+      event(other, "Обмен столом и номером партии");
+      publisher.publishEvent(new Changed(other.id, false));
+    }
+    g.tableNumber = table;
+    g.gameNumber = number;
+    g.updatedAt = Instant.now();
+    games.saveAndFlush(g);
+    event(g, "Стол и номер партии изменены");
+    publisher.publishEvent(new Changed(id, false));
+    return view(g, false);
+  }
+
+  @Transactional
+  void deleteGame(String id) {
+    var g = games.lockById(id).orElseThrow(ApiErrors::missing);
+    events.deleteByGameId(id);
+    events.flush();
+    games.delete(g);
+    games.flush();
+    publisher.publishEvent(new Changed(id, true));
+  }
+
+  @Transactional
+  void deleteTournament(String id) {
+    var t = getTournament(id);
+    for (var g : games.findByTournamentIdOrderByTableNumberAscGameNumberAsc(id)) deleteGame(g.id);
+    tournamentPlayers.deleteAll(tournamentPlayers.findByTournamentIdOrderByCreatedAtAsc(id));
+    tournamentPlayers.flush();
+    tournaments.delete(t);
+    tournaments.flush();
+  }
+
+  void validateRoster(GameState state) {
+    var used = new HashSet<String>();
+    for (var p : state.players)
+      if (p.tournamentPlayerId != null && !used.add(p.tournamentPlayerId))
+        throw ApiErrors.bad("Один игрок не может занимать два места в партии.");
+  }
+
   private void event(Game g, String description) {
     var e = new GameEvent();
     e.id = UUID.randomUUID().toString();
@@ -364,16 +428,15 @@ class GameService {
           profile =
               tournamentPlayers
                   .findByTournamentIdAndNormalizedName(tournamentId, normalized)
-                  .orElseGet(
-                      () -> {
-                        var created = new TournamentPlayer();
-                        created.id = UUID.randomUUID().toString();
-                        created.tournamentId = tournamentId;
-                        created.name = player.name.strip();
-                        created.normalizedName = normalized;
-                        created.createdAt = Instant.now();
-                        return created;
-                      });
+                  .orElseGet(() -> {
+                    var created = new TournamentPlayer();
+                    created.id = UUID.randomUUID().toString();
+                    created.tournamentId = tournamentId;
+                    created.name = player.name.strip();
+                    created.normalizedName = normalized;
+                    created.createdAt = Instant.now();
+                    return created;
+                  });
           byName.put(normalized, profile);
         }
         if (profile.photoId == null && player.photo != null && !player.photo.isBlank())
@@ -383,7 +446,7 @@ class GameService {
     return tournamentPlayers.saveAll(byName.values());
   }
 
-  private void applyRoster(Game game, GameState state) {
+  void applyRoster(Game game, GameState state) {
     var profiles = tournamentPlayers.findByTournamentIdOrderByCreatedAtAsc(game.tournamentId);
     var byId = new HashMap<String, TournamentPlayer>();
     var byName = new HashMap<String, TournamentPlayer>();
@@ -408,8 +471,8 @@ class GameService {
   }
 
   private void propagateProfile(TournamentPlayer profile, String previousName) {
-    for (var game : games.findByTournamentIdOrderByTableNumberAscGameNumberAsc(
-        profile.tournamentId)) {
+    for (var game :
+        games.findByTournamentIdOrderByTableNumberAscGameNumberAsc(profile.tournamentId)) {
       var state = state(game);
       boolean changed = false;
       for (var player : state.players) {

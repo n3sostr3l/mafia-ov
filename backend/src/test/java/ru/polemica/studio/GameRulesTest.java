@@ -103,6 +103,9 @@ class GameRulesTest {
     assertThatThrownBy(() -> rules.action(voting, "VOTE", 3, 2, now))
         .hasMessageContaining("Выбывший");
     rules.action(s, "VOTE", 1, 2, now);
+    assertThatThrownBy(() -> rules.action(voting, "VOTE", 1, 6, now))
+        .hasMessageContaining("уже проголосовал");
+    rules.action(s, "VOTE", 1, null, now);
     rules.action(s, "VOTE", 1, 6, now);
     assertThat(rules.current(s).votes).hasSize(1).containsEntry(1, 6);
     rules.action(s, "VOTE_ELIMINATE", 6, null, now);

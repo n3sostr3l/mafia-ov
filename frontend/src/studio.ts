@@ -1,3 +1,5 @@
+import { PlayerPickerComponent, PlayerOption } from "./player-picker";
+import { ballotCandidates } from "./voting";
 import {
   Component,
   OnDestroy,
@@ -54,6 +56,7 @@ import {
     PlayerCardComponent,
     OverlayComponent,
     SpeechClockComponent,
+    PlayerPickerComponent,
   ],
   templateUrl: "./studio.html",
 })
@@ -67,7 +70,18 @@ export class StudioComponent implements OnInit, OnDestroy {
     "studio" | "library" | "tournament" | "settings" | "history" | "help"
   >("studio");
   tab = signal<"player" | "testament" | "checks">("player");
-  modal = signal<"obs" | "newTournament" | "newGame" | "rotate" | null>(null);
+  modal = signal<
+    | "obs"
+    | "newTournament"
+    | "newGame"
+    | "rotate"
+    | "unlock"
+    | "access"
+    | "transfer"
+    | "location"
+    | "delete"
+    | null
+  >(null);
   isOverlay = location.pathname.startsWith("/overlay/");
   overlayReady = signal(false);
   overlayError = signal("");
@@ -112,7 +126,31 @@ export class StudioComponent implements OnInit, OnDestroy {
   wheel = 1;
   checkChecker = 4;
   checkSeat = 1;
-  voteCandidate: number | null = null;
+  password = "";
+  lockedTournament = "";
+  draftProfile: string | null = null;
+  transferMode: "import" | "export" = "export";
+  transferOptions = {
+    seating: true,
+    photos: true,
+    roles: false,
+    progress: false,
+    theme: false,
+  };
+  transferFile: File | null = null;
+  editingGame: GameSummary | null = null;
+  swapLocation = false;
+  pendingDelete: {
+    kind: "games" | "tournaments";
+    id: string;
+    name: string;
+  } | null = null;
+  private lockListener = (event: Event) => {
+    this.lockedTournament = (event as CustomEvent).detail.id;
+    this.password = "";
+    this.stopLive();
+    this.modal.set("unlock");
+  };
   checkers = computed(() =>
     this.game().state.players.filter(
       (p) => p.role === "DON" || p.role === "SHERIFF",
@@ -138,6 +176,7 @@ export class StudioComponent implements OnInit, OnDestroy {
   };
   async ngOnInit() {
     window.addEventListener("storage", this.storageListener);
+    window.addEventListener("tournament-locked", this.lockListener);
     this.select(4);
     this.settingsDraft = structuredClone(this.game().state.theme);
     if (this.isOverlay) {
@@ -172,6 +211,7 @@ export class StudioComponent implements OnInit, OnDestroy {
     clearTimeout(this.toastTimer);
     clearInterval(this.demoTimer);
     window.removeEventListener("storage", this.storageListener);
+    window.removeEventListener("tournament-locked", this.lockListener);
   }
   readDemo(): Game {
     try {
@@ -247,6 +287,7 @@ export class StudioComponent implements OnInit, OnDestroy {
     if (!p) return;
     if (p.role === "DON" || p.role === "SHERIFF") this.checkChecker = p.seat;
     this.draftName = p.name;
+    this.draftProfile = p.tournamentPlayerId ?? null;
     const t = p.testament;
     this.testamentMode = t?.mode ?? "COLORS";
     this.wheel = t?.wheel ?? 1;
@@ -286,41 +327,84 @@ export class StudioComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const current = this.player();
     await this.run(async () => {
-      if (current.tournamentPlayerId) {
-        const profile = await this.saveTournamentPlayerRequest(
-          current.tournamentPlayerId,
-          this.draftName.trim(),
-          current.photo,
-        );
-        this.setTournamentPlayer(profile);
-        await this.reloadCurrentGame();
-      } else {
-        const profile = await this.api.request<TournamentPlayer>(
+      const existing = this.tournamentPlayers().find(
+        (p) =>
+          p.name.trim().toLocaleLowerCase() ===
+          this.draftName.trim().toLocaleLowerCase(),
+      );
+      const profile =
+        existing ??
+        (await this.api.request<TournamentPlayer>(
           "/tournaments/" + this.game().tournamentId + "/players",
           "POST",
-          { name: this.draftName.trim(), photo: current.photo },
-        );
-        const next = structuredClone(this.game());
-        const player = next.state.players[this.selected() - 1];
-        player.name = profile.name;
-        player.photo = profile.photo;
-        player.tournamentPlayerId = profile.id;
-        const saved = await this.api.request<Game>(
-          "/games/" + next.id,
-          "PUT",
           {
-            revision: next.revision,
-            state: next.state,
-            description: "Имя игрока изменено",
+            name: this.draftName.trim(),
+            photo: this.player().tournamentPlayerId
+              ? null
+              : this.player().photo,
           },
-        );
-        this.game.set(saved);
-        this.setTournamentPlayer(profile);
-        this.notify("Имя игрока сохранено для всего турнира.");
-      }
+        ));
+      this.setTournamentPlayer(profile);
+      const next = await this.api.request<Game>("/games/" + this.game().id);
+      this.placeProfile(next.state, profile);
+      this.game.set(
+        await this.api.request<Game>("/games/" + next.id, "PUT", {
+          revision: next.revision,
+          state: next.state,
+          description: "Состав партии изменён",
+        }),
+      );
+      this.select(this.selected());
     });
+  }
+  profileOptions(seat?: number): PlayerOption[] {
+    return this.tournamentPlayers().map((p) => ({
+      ...p,
+      disabled:
+        !!seat &&
+        this.newGamePlayerIds.includes(p.id) &&
+        this.newGamePlayerIds[seat - 1] !== p.id,
+    }));
+  }
+  seatOptions(checkersOnly = false): PlayerOption[] {
+    return this.game()
+      .state.players.filter(
+        (p) => !checkersOnly || ["DON", "SHERIFF"].includes(p.role),
+      )
+      .map((p) => ({
+        id: String(p.seat),
+        name: p.name + " · № " + p.seat,
+        photo: p.photo,
+      }));
+  }
+  number(value: string | null) {
+    return value === null ? null : Number(value);
+  }
+  private placeProfile(s: State, profile: TournamentPlayer) {
+    const target = s.players[this.selected() - 1];
+    const other = s.players.find(
+      (p) => p.tournamentPlayerId === profile.id && p.seat !== target.seat,
+    );
+    if (other)
+      Object.assign(other, {
+        name: target.name,
+        photo: target.photo,
+        importedPhoto: target.importedPhoto,
+        tournamentPlayerId: target.tournamentPlayerId,
+      });
+    Object.assign(target, {
+      tournamentPlayerId: profile.id,
+      name: profile.name,
+      photo: profile.photo,
+      importedPhoto: null,
+    });
+  }
+  async assignProfile(id: string | null) {
+    const p = this.tournamentPlayers().find((p) => p.id === id);
+    if (!p) return;
+    await this.change("Рассадка изменена", (s) => this.placeProfile(s, p));
+    this.select(this.selected());
   }
   async speak(seat: number | null) {
     if (
@@ -383,19 +467,45 @@ export class StudioComponent implements OnInit, OnDestroy {
       .filter(([, target]) => target === seat)
       .map(([voter]) => Number(voter));
   }
-  async vote(voter: number) {
-    if (this.voteCandidate === null) return;
+  ballotCandidates() {
+    return ballotCandidates(this.game().state);
+  }
+  ballotStage() {
+    return (
+      {
+        INITIAL: "Голосование",
+        SHOOTOUT: "Перестрелка · 30 секунд",
+        REVOTE: "Переголосование",
+        LIFT: "Кто за подъём всех?",
+        COMPLETED: "Голосование завершено",
+      } as Record<string, string>
+    )[this.currentRound().ballotStage ?? "INITIAL"];
+  }
+  async vote(voter: number, candidate: number) {
     await this.action(
       "VOTE",
       voter,
-      this.currentRound().votes[voter] === this.voteCandidate
-        ? null
-        : this.voteCandidate,
+      this.currentRound().votes[voter] === candidate ? null : candidate,
     );
   }
-  async eliminateCandidate() {
-    if (this.voteCandidate !== null)
-      await this.action("VOTE_ELIMINATE", this.voteCandidate);
+  voteDisabled(voter: number, candidate: number) {
+    const r = this.currentRound(),
+      assigned = r.votes[voter];
+    return (
+      this.saving() ||
+      !r.eligibleVoters.includes(voter) ||
+      this.game().state.players[voter - 1].status !== "ALIVE" ||
+      (assigned != null && assigned !== candidate)
+    );
+  }
+  liftThreshold() {
+    return Math.floor(this.alive() / 2);
+  }
+  candidateColor(seat: number) {
+    const role = this.game().state.players[seat - 1].role;
+    return ["DON", "MAFIA"].includes(role)
+      ? this.game().state.theme.mafia
+      : this.game().state.theme.civilian;
   }
   async toggleVisibility(field: "showRoles" | "showChecks") {
     await this.change(
@@ -652,7 +762,17 @@ export class StudioComponent implements OnInit, OnDestroy {
       const t = await this.api.request<Tournament>("/tournaments", "POST", {
         name: this.newName,
         externalId: this.externalId || null,
+        password: this.password || null,
       });
+      if (this.password) {
+        const grant = await this.api.request<{ key: string }>(
+          "/tournaments/" + t.id + "/unlock",
+          "POST",
+          { password: this.password },
+        );
+        this.api.remember(t.id, grant.key);
+      }
+      this.password = "";
       this.modal.set(null);
       this.newName = "";
       this.externalId = "";
@@ -787,7 +907,13 @@ export class StudioComponent implements OnInit, OnDestroy {
     this.error.set("");
     try {
       const g = await this.api.request<Game>("/games/" + id);
-      this.game.set(g);
+      this.game.set(normalizeGame(g));
+      const data = await this.api.request<{
+        tournament: Tournament;
+        players: TournamentPlayer[];
+      }>("/tournaments/" + g.tournamentId);
+      this.chosenTournament.set(data.tournament);
+      this.tournamentPlayers.set(data.players);
       this.select(1);
       this.page.set("studio");
       this.settingsDraft = structuredClone(g.state.theme);
@@ -896,6 +1022,120 @@ export class StudioComponent implements OnInit, OnDestroy {
       this.notify("Создана новая ссылка. Замените её в OBS.");
     });
   }
+  async unlockTournament() {
+    await this.run(async () => {
+      const grant = await this.api.request<{ key: string }>(
+        "/tournaments/" + this.lockedTournament + "/unlock",
+        "POST",
+        { password: this.password },
+      );
+      this.api.remember(this.lockedTournament, grant.key);
+      this.password = "";
+      this.modal.set(null);
+      const path = location.pathname;
+      if (path.startsWith("/games/")) await this.loadGame(path.split("/")[2]);
+      else await this.openTournament(this.lockedTournament);
+    });
+  }
+  async savePassword() {
+    await this.run(async () => {
+      const id = this.chosenTournament()!.id;
+      const grant = await this.api.request<{ key: string }>(
+        "/tournaments/" + id + "/password",
+        "PUT",
+        { password: this.password },
+      );
+      this.api.remember(id, grant.key);
+      this.password = "";
+      this.modal.set(null);
+      await this.openTournament(id);
+      this.notify("Доступ к турниру обновлён.");
+    });
+  }
+  editLocation(g: GameSummary) {
+    this.editingGame = g;
+    this.newTable = g.tableNumber;
+    this.newGameNumber = g.gameNumber;
+    this.swapLocation = false;
+    this.modal.set("location");
+  }
+  async saveLocation() {
+    await this.run(async () => {
+      const g = this.editingGame!;
+      await this.api.request("/games/" + g.id + "/location", "PATCH", {
+        revision: g.revision,
+        tableNumber: this.newTable,
+        gameNumber: this.newGameNumber,
+        swap: this.swapLocation,
+      });
+      this.modal.set(null);
+      await this.openTournament(this.chosenTournament()!.id);
+    });
+  }
+  confirmDelete(kind: "games" | "tournaments", id: string, name: string) {
+    this.pendingDelete = { kind, id, name };
+    this.modal.set("delete");
+  }
+  async deleteResource() {
+    await this.run(async () => {
+      const d = this.pendingDelete!;
+      await this.api.request("/" + d.kind + "/" + d.id, "DELETE");
+      this.modal.set(null);
+      if (d.kind === "tournaments") {
+        this.stopLive();
+        this.game.set(this.readDemo());
+        this.chosenTournament.set(null);
+        await this.openLibrary();
+      } else {
+        if (this.game().id === d.id) {
+          this.stopLive();
+          this.game.set(this.readDemo());
+        }
+        await this.openTournament(this.chosenTournament()!.id);
+      }
+    });
+  }
+  transfer(mode: "import" | "export") {
+    this.transferMode = mode;
+    this.transferFile = null;
+    this.modal.set("transfer");
+  }
+  pickArchive(event: Event) {
+    this.transferFile = (event.target as HTMLInputElement).files?.[0] ?? null;
+  }
+  async transferTournament() {
+    await this.run(async () => {
+      const query = new URLSearchParams(
+        Object.entries(this.transferOptions).map(([k, v]) => [k, String(v)]),
+      ).toString();
+      if (this.transferMode === "export") {
+        const blob = await this.api.request<Blob>(
+          "/tournaments/" + this.chosenTournament()!.id + "/export?" + query,
+          "GET",
+          undefined,
+          true,
+        );
+        const url = URL.createObjectURL(blob),
+          link = document.createElement("a");
+        link.href = url;
+        link.download = "tournament-" + this.chosenTournament()!.id + ".zip";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        this.modal.set(null);
+      } else {
+        if (!this.transferFile) throw new Error("Выберите архив турнира.");
+        const form = new FormData();
+        form.append("file", this.transferFile);
+        const result = await this.api.request<{ id: string }>(
+          "/tournaments/import?" + query,
+          "POST",
+          form,
+        );
+        this.modal.set(null);
+        await this.openTournament(result.id);
+      }
+    });
+  }
   private async loadOverlay() {
     const id = location.pathname.split("/")[2],
       token = this.route.snapshot.queryParamMap.get("token") || "";
@@ -956,7 +1196,10 @@ export class StudioComponent implements OnInit, OnDestroy {
           location.host +
           "/ws/games/" +
           id +
-          (token !== undefined ? "?token=" + encodeURIComponent(token) : ""),
+          (token !== undefined
+            ? "?token=" + encodeURIComponent(token)
+            : "?editKey=" +
+              encodeURIComponent(this.api.key(this.game().tournamentId))),
       );
       this.socket = socket;
       socket.onopen = () => this.connected.set(true);

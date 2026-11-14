@@ -67,6 +67,14 @@ export interface RoundData {
   eligibleVoters: number[];
   spokenSeats: number[];
   eliminated: number | null;
+  ballotStage?: "INITIAL" | "SHOOTOUT" | "REVOTE" | "LIFT" | "COMPLETED";
+  runoffCandidates?: number[];
+  initialVotes?: Record<string, number>;
+  revoteVotes?: Record<string, number>;
+  liftVoters?: number[];
+  shootoutSpoken?: number[];
+  eliminatedSeats?: number[];
+  splitLift?: boolean;
 }
 export function normalizeGame(g: Game): Game {
   const s = g.state;
@@ -74,7 +82,7 @@ export function normalizeGame(g: Game): Game {
     const previous = s.players.filter((p) => p.pu && p.status !== "ALIVE");
     if (previous.length === 1) s.firstDeparted = previous[0].seat;
   }
-  s.schemaVersion = 2;
+  s.schemaVersion = 3;
   s.theme.sheriff ??= s.theme.special ?? "#efc34d";
   s.theme.don ??= "#8b5cc7";
   s.rounds ??= {};
@@ -85,6 +93,16 @@ export function normalizeGame(g: Game): Game {
     spokenSeats: [],
     eliminated: null,
   };
+  Object.values(s.rounds).forEach((r) => {
+    r.ballotStage ??= r.eliminated ? "COMPLETED" : "INITIAL";
+    r.runoffCandidates ??= [];
+    r.initialVotes ??= {};
+    r.revoteVotes ??= {};
+    r.liftVoters ??= [];
+    r.shootoutSpoken ??= [];
+    r.eliminatedSeats ??= r.eliminated ? [r.eliminated] : [];
+    r.splitLift ??= false;
+  });
   s.firstDeparted ??= null;
   s.players.forEach((p) => (p.pu = s.firstDeparted === p.seat));
   s.winner ??= null;
@@ -119,6 +137,7 @@ export interface Tournament {
   name: string;
   externalId: string | null;
   createdAt: string;
+  passwordProtected?: boolean;
 }
 export interface TournamentPlayer {
   id: string;

@@ -1,3 +1,4 @@
+import { ballotAction, nextShootout } from "./voting";
 import { Game, State, Check, RoundData, normalizeGame } from "./model";
 
 export const roundData = (s: State): RoundData =>
@@ -7,6 +8,14 @@ export const roundData = (s: State): RoundData =>
     eligibleVoters: [],
     spokenSeats: [],
     eliminated: null,
+    ballotStage: "INITIAL",
+    runoffCandidates: [],
+    initialVotes: {},
+    revoteVotes: {},
+    liftVoters: [],
+    shootoutSpoken: [],
+    eliminatedSeats: [],
+    splitLift: false,
   });
 const mafia = (role: string) => role === "MAFIA" || role === "DON";
 export function checkResult(s: State, by: string, seat: number): string {
@@ -64,11 +73,16 @@ export function finishGame(s: State) {
   s.winner = winner;
 }
 export function startSpeech(s: State, seat: number, now: number) {
-  if (s.phase !== "DAY" || s.winner || s.players[seat - 1]?.status !== "ALIVE")
+  if (
+    (s.phase !== "DAY" &&
+      !(s.phase === "VOTING" && roundData(s).ballotStage === "SHOOTOUT")) ||
+    s.winner ||
+    s.players[seat - 1]?.status !== "ALIVE"
+  )
     throw new Error("Выберите живого выступающего во время дня.");
   s.speaker = seat;
-  s.speechRemainingMs = 60000;
-  s.speechEndsAt = now + 60000;
+  s.speechRemainingMs = s.phase === "VOTING" ? 30000 : 60000;
+  s.speechEndsAt = now + s.speechRemainingMs;
 }
 export function stepPhase(s: State, direction: number, now: number) {
   roundData(s).nominees = [...s.nominees];
@@ -121,6 +135,10 @@ export function stepPhase(s: State, direction: number, now: number) {
   }
 }
 export function nextSpeech(s: State, now: number) {
+  if (s.phase === "VOTING" && roundData(s).ballotStage === "SHOOTOUT") {
+    nextShootout(s, now);
+    return;
+  }
   const r = roundData(s),
     previous = s.speaker ?? ((s.round - 2 + 10) % 10) + 1;
   if (s.speaker && !r.spokenSeats.includes(s.speaker))
@@ -174,31 +192,12 @@ export function demoAction(
       if (s.speaker && s.speechEndsAt === null)
         s.speechEndsAt = now + s.speechRemainingMs;
       break;
-    case "VOTE": {
-      const r = roundData(s);
-      if (s.phase !== "VOTING" || !r.eligibleVoters.includes(seat!))
-        throw new Error("Этот игрок не участвовал в голосовании раунда.");
-      if (candidate == null) delete r.votes[seat!];
-      else {
-        if (
-          !s.nominees.includes(candidate) ||
-          !r.eligibleVoters.includes(candidate)
-        )
-          throw new Error("Выберите кандидатуру этого раунда.");
-        r.votes[seat!] = candidate;
-      }
-      break;
-    }
+    case "VOTE":
+    case "VOTE_FINISH":
     case "VOTE_ELIMINATE":
-      if (
-        s.phase !== "VOTING" ||
-        !s.nominees.includes(seat!) ||
-        s.players[seat! - 1].status !== "ALIVE"
-      )
-        throw new Error("Выберите живого кандидата.");
-      s.players[seat! - 1].status = "VOTED";
-      roundData(s).eliminated = seat!;
-      s.firstDeparted ??= seat!;
+    case "LIFT_VOTE":
+    case "LIFT_FINISH":
+      ballotAction(s, type, seat, candidate, now);
       break;
   }
   finishGame(s);

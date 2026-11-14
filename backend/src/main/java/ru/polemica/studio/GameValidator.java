@@ -95,6 +95,25 @@ class GameValidator {
           || (r.eliminated != null && !seats.contains(r.eliminated)))
         throw ApiErrors.bad("Некорректные данные голосования или речей раунда.");
     }
+    for (var r : s.rounds.values()) {
+      if (r.ballotStage == null
+          || !List.of("INITIAL", "SHOOTOUT", "REVOTE", "LIFT", "COMPLETED").contains(r.ballotStage)
+          || r.runoffCandidates == null
+          || r.initialVotes == null
+          || r.revoteVotes == null
+          || r.liftVoters == null
+          || r.shootoutSpoken == null
+          || r.eliminatedSeats == null
+          || !seats.containsAll(r.runoffCandidates)
+          || !seats.containsAll(r.liftVoters)
+          || !seats.containsAll(r.shootoutSpoken)
+          || !seats.containsAll(r.eliminatedSeats)
+          || !seats.containsAll(r.initialVotes.keySet())
+          || !r.nominees.containsAll(r.initialVotes.values())
+          || !seats.containsAll(r.revoteVotes.keySet())
+          || !r.nominees.containsAll(r.revoteVotes.values()))
+        throw ApiErrors.bad("Некорректная история переголосования.");
+    }
     var t = s.theme;
     if (t.width < 640
         || t.width > 3840

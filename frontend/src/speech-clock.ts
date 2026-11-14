@@ -20,10 +20,10 @@ import { State } from "./model";
           role="progressbar"
           aria-label="Оставшееся время речи"
           aria-valuemin="0"
-          aria-valuemax="60"
+          [attr.aria-valuemax]="duration() / 1000"
           [attr.aria-valuenow]="seconds()"
         >
-          <span [style.width.%]="remaining() / 600"></span>
+          <span [style.width.%]="(remaining() / duration()) * 100"></span>
         </div>
       </div>
     }
@@ -33,11 +33,17 @@ export class SpeechClockComponent implements OnDestroy {
   @Input({ required: true }) state!: State;
   private now = signal(Date.now());
   private timer = setInterval(() => this.now.set(Date.now()), 100);
+  duration() {
+    return this.state.phase === "VOTING" &&
+      this.state.rounds[this.state.round]?.ballotStage === "SHOOTOUT"
+      ? 30000
+      : 60000;
+  }
   remaining() {
     return Math.max(
       0,
       Math.min(
-        60000,
+        this.duration(),
         this.state.speechEndsAt === null
           ? this.state.speechRemainingMs
           : this.state.speechEndsAt - this.now(),

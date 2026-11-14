@@ -100,6 +100,14 @@ public class GameState {
     public List<Integer> eligibleVoters = new ArrayList<>();
     public List<Integer> spokenSeats = new ArrayList<>();
     public Integer eliminated;
+    public String ballotStage = "INITIAL";
+    public List<Integer> runoffCandidates = new ArrayList<>();
+    public Map<Integer, Integer> initialVotes = new TreeMap<>();
+    public Map<Integer, Integer> revoteVotes = new TreeMap<>();
+    public List<Integer> liftVoters = new ArrayList<>();
+    public List<Integer> shootoutSpoken = new ArrayList<>();
+    public List<Integer> eliminatedSeats = new ArrayList<>();
+    public boolean splitLift;
   }
 
   public static GameState initial(boolean demo) {

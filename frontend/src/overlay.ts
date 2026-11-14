@@ -33,7 +33,11 @@ import { SpeechClockComponent } from "./speech-clock";
               <span>На голосовании</span>
               <div>
                 @for (seat of game.state.nominees; track seat) {
-                  <b>{{ seat }}</b>
+                  <b
+                    [style.background]="candidateColor(seat)"
+                    [style.color]="candidateColor(seat) ? '#fff' : null"
+                    >{{ seat }}</b
+                  >
                 }
               </div>
             </div>
@@ -41,7 +45,17 @@ import { SpeechClockComponent } from "./speech-clock";
           @for (by of checkRoles; track by) {
             @if (checks(by).length) {
               <div class="overlay-event-row">
-                <span>{{ by === "DON" ? "Дон" : "Шериф" }}</span>
+                <span
+                  class="check-role-dot"
+                  [style.background]="
+                    by === 'DON'
+                      ? game.state.theme.don
+                      : game.state.theme.sheriff
+                  "
+                  [attr.aria-label]="
+                    by === 'DON' ? 'Проверки Дона' : 'Проверки Шерифа'
+                  "
+                ></span>
                 <div>
                   @for (check of checks(by); track check.id) {
                     <b
@@ -49,7 +63,7 @@ import { SpeechClockComponent } from "./speech-clock";
                       [style.background]="checkColor(check.result)"
                       [class.sheriff-result]="check.result === 'SHERIFF'"
                       [attr.title]="result(check)"
-                      >{{ check.seat }}<small>{{ result(check) }}</small></b
+                      >{{ check.seat }}</b
                     >
                   }
                 </div>
@@ -96,6 +110,14 @@ export class OverlayComponent {
   checkRoles = ["DON", "SHERIFF"] as const;
   checks(by: string) {
     return this.game.state.checks.filter((c) => c.by === by);
+  }
+  candidateColor(seat: number) {
+    const role = this.game.state.players.find((p) => p.seat === seat)?.role;
+    return role === "UNKNOWN"
+      ? null
+      : role === "MAFIA" || role === "DON"
+        ? this.game.state.theme.mafia
+        : this.game.state.theme.civilian;
   }
   checkColor(result: string) {
     const t = this.game.state.theme;

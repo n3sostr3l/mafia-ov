@@ -16,6 +16,9 @@ class Tournament {
   @Column(name = "external_id")
   String externalId;
 
+  @Column(name = "password_hash")
+  String passwordHash;
+
   @Column(name = "created_at")
   Instant createdAt;
 }
@@ -116,6 +119,8 @@ class GameEvent {
 }
 
 interface EventRepository extends JpaRepository<GameEvent, String> {
+  void deleteByGameId(String gameId);
+
   List<GameEvent> findTop50ByGameIdOrderByRevisionDesc(String gameId);
 }
 

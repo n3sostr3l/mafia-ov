@@ -19,11 +19,18 @@ class GameRules {
           s.players.stream().filter(p -> p.pu && p.status != GameState.Status.ALIVE).toList();
       if (previous.size() == 1) s.firstDeparted = previous.getFirst().seat;
     }
-    s.schemaVersion = 2;
+    int previousSchema = s.schemaVersion;
+    s.schemaVersion = 3;
     s.players.forEach(p -> p.pu = Objects.equals(s.firstDeparted, p.seat));
     if (s.theme.sheriff == null) s.theme.sheriff = s.theme.special;
     if (s.rounds == null) s.rounds = new TreeMap<>();
     if (!s.rounds.containsKey(s.round)) current(s).nominees = new ArrayList<>(s.nominees);
+    for (var r : s.rounds.values()) {
+      if (previousSchema < 3 && r.eliminated != null) {
+        r.ballotStage = "COMPLETED";
+        r.eliminatedSeats = new ArrayList<>(List.of(r.eliminated));
+      }
+    }
     if (s.phase == GameState.Phase.VOTING && current(s).eligibleVoters.isEmpty())
       current(s).eligibleVoters =
           new ArrayList<>(
@@ -47,6 +54,10 @@ class GameRules {
     for (var entry : old.rounds.entrySet())
       if (entry.getKey() != s.round) s.rounds.put(entry.getKey(), entry.getValue());
     s.rounds.put(s.round, old.rounds.get(old.round));
+    if (old.phase == GameState.Phase.VOTING
+        && !"INITIAL".equals(current(old).ballotStage)
+        && !s.nominees.equals(old.nominees))
+      throw ApiErrors.bad("После первого голосования список кандидатур зафиксирован.");
     for (Integer seat : s.nominees) {
       if (!old.nominees.contains(seat) && player(s, seat).status != GameState.Status.ALIVE)
         throw ApiErrors.bad("Выбывшего игрока нельзя выставить на голосование.");
@@ -111,44 +122,23 @@ class GameRules {
       case "PHASE_PREVIOUS" -> phase(s, -1, now.toEpochMilli());
       case "SPEECH_START" -> startSpeech(s, seat, now.toEpochMilli());
       case "SPEECH_NEXT" -> {
-        requireDay(s);
+        requireSpeech(s);
         nextSpeech(s, now.toEpochMilli());
       }
       case "SPEECH_PAUSE" -> {
-        requireDay(s);
+        requireSpeech(s);
         if (s.speechEndsAt != null)
           s.speechRemainingMs = Math.max(0, s.speechEndsAt - now.toEpochMilli());
         s.speechEndsAt = null;
       }
       case "SPEECH_RESUME" -> {
-        requireDay(s);
+        requireSpeech(s);
         if (s.speaker == null) throw ApiErrors.bad("Сначала выберите выступающего.");
         if (s.speechEndsAt == null)
           s.speechEndsAt = now.toEpochMilli() + Math.max(1, s.speechRemainingMs);
       }
-      case "VOTE" -> {
-        if (s.phase != GameState.Phase.VOTING)
-          throw ApiErrors.bad("Голоса фиксируются в фазе голосования.");
-        var round = current(s);
-        if (!round.eligibleVoters.contains(seat))
-          throw ApiErrors.bad("Выбывший игрок не может голосовать.");
-        if (candidate == null) round.votes.remove(seat);
-        else {
-          if (!s.nominees.contains(candidate) || !round.eligibleVoters.contains(candidate))
-            throw ApiErrors.bad("Выберите кандидатуру, участвовавшую в голосовании этого раунда.");
-          round.votes.put(seat, candidate);
-        }
-      }
-      case "VOTE_ELIMINATE" -> {
-        if (s.phase != GameState.Phase.VOTING
-            || s.winner != null
-            || !s.nominees.contains(seat)
-            || player(s, seat).status != GameState.Status.ALIVE)
-          throw ApiErrors.bad("Выберите живого кандидата на текущем голосовании.");
-        player(s, seat).status = GameState.Status.VOTED;
-        current(s).eliminated = seat;
-        if (s.firstDeparted == null) s.firstDeparted = seat;
-      }
+      case "VOTE", "VOTE_FINISH", "LIFT_VOTE", "LIFT_FINISH", "VOTE_ELIMINATE" ->
+          VotingRules.action(s, type, seat, candidate, now.toEpochMilli());
       default -> throw ApiErrors.bad("Неизвестное действие.");
     }
     finish(s, previousWinner);
@@ -207,12 +197,14 @@ class GameRules {
   }
 
   void startSpeech(GameState s, Integer seat, long now) {
-    requireDay(s);
+    requireSpeech(s);
+    if ("SHOOTOUT".equals(current(s).ballotStage) && !current(s).runoffCandidates.contains(seat))
+      throw ApiErrors.bad("В перестрелке участвуют только лидеры голосования.");
     if (player(s, seat).status != GameState.Status.ALIVE)
       throw ApiErrors.bad("Выбывшему игроку нельзя передать слово.");
     s.speaker = seat;
-    s.speechRemainingMs = SPEECH_MS;
-    s.speechEndsAt = now + SPEECH_MS;
+    s.speechRemainingMs = s.phase == GameState.Phase.VOTING ? 30000 : SPEECH_MS;
+    s.speechEndsAt = now + s.speechRemainingMs;
   }
 
   void expire(GameState s, Instant now) {
@@ -223,6 +215,10 @@ class GameRules {
   }
 
   void nextSpeech(GameState s, long now) {
+    if (s.phase == GameState.Phase.VOTING && "SHOOTOUT".equals(current(s).ballotStage)) {
+      VotingRules.nextShootout(s, now);
+      return;
+    }
     int previous = s.speaker == null ? (s.round - 2 + 10) % 10 + 1 : s.speaker;
     var spoken = current(s).spokenSeats;
     if (s.speaker != null && !spoken.contains(s.speaker)) spoken.add(s.speaker);
@@ -278,8 +274,10 @@ class GameRules {
         .orElseThrow(() -> ApiErrors.bad("Номер игрока: от 1 до 10."));
   }
 
-  private void requireDay(GameState s) {
-    if (s.phase != GameState.Phase.DAY || s.winner != null)
+  private void requireSpeech(GameState s) {
+    if ((s.phase != GameState.Phase.DAY
+            && !(s.phase == GameState.Phase.VOTING && "SHOOTOUT".equals(current(s).ballotStage)))
+        || s.winner != null)
       throw ApiErrors.bad("Выступления доступны во время дня активной партии.");
   }
 

@@ -1,3 +1,4 @@
+import { cardVoters } from "./voting";
 import { Component, Input, OnChanges } from "@angular/core";
 import { Player, Role, State, photoId, roleLabel, roleColor } from "./model";
 import { IconComponent } from "./icon";
@@ -9,6 +10,7 @@ import { IconComponent } from "./icon";
     <div
       class="player-visual"
       [class.eliminated]="player.status !== 'ALIVE'"
+      [class.voted-out]="player.status === 'VOTED'"
       [class.special-role]="player.role === 'SHERIFF'"
       [class.hidden-role]="player.role === 'UNKNOWN'"
       [class.speaking]="state.speaker === player.seat"
@@ -52,6 +54,13 @@ import { IconComponent } from "./icon";
         <span class="speaking-indicator"><i></i><i></i><i></i><i></i></span>
       }
     </div>
+    @if (voters().length) {
+      <div class="card-voters" aria-label="Голосовавшие за игрока">
+        @for (seat of voters(); track seat) {
+          <span>{{ seat }}</span>
+        }
+      </div>
+    }
     <div class="player-extras">
       @if (state.firstDeparted === player.seat) {
         <span class="pu-block" title="Первый ушедший">ПУ</span>
@@ -95,6 +104,9 @@ export class PlayerCardComponent implements OnChanges {
           "?token=" +
           encodeURIComponent(this.token)
         : "/api/v1/uploads/" + id;
+  }
+  voters() {
+    return cardVoters(this.state, this.player.seat);
   }
   color(role: Role) {
     return roleColor(this.state.theme, role);

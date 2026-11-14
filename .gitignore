@@ -9,3 +9,6 @@ data/
 *.log
 test-results/
 playwright-report/
+
+# Private Telegram input stays local.
+tg_export/

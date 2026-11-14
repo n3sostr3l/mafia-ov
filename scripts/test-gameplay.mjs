@@ -113,11 +113,13 @@ test("phase rewind preserves each round nominations and votes", () => {
   demoAction(g, "PHASE_NEXT");
   assert.deepEqual(g.state.nominees, [7]);
 });
-test("a departed voter is excluded and a new vote replaces the old vote", () => {
+test("a departed voter and duplicate votes are rejected until the previous vote is cleared", () => {
   const g = game();
   demoAction(g, "PHASE_NEXT");
   assert.throws(() => demoAction(g, "VOTE", 3, 2));
   demoAction(g, "VOTE", 1, 2);
+  assert.throws(() => demoAction(g, "VOTE", 1, 6));
+  demoAction(g, "VOTE", 1, null);
   demoAction(g, "VOTE", 1, 6);
   assert.deepEqual(roundData(g.state).votes, { 1: 6 });
   demoAction(g, "VOTE_ELIMINATE", 6);
@@ -158,4 +160,66 @@ test("city and mafia victory stop speech and display a finished game", () => {
   [1, 3, 5, 7].forEach((seat) => (m.state.players[seat - 1].status = "SHOT"));
   finishGame(m.state);
   assert.equal(m.state.winner, "MAFIA");
+});
+
+const { cardVoters } = require(
+  path.join(root, ".runtime/gameplay-js/voting.js"),
+);
+test("tie speeches last thirty seconds, can be skipped, and reset votes for a runoff", () => {
+  const g = game();
+  demoAction(g, "PHASE_NEXT");
+  demoAction(g, "VOTE", 1, 2);
+  demoAction(g, "VOTE", 4, 6);
+  demoAction(g, "VOTE_FINISH", null, null, 1000);
+  assert.equal(roundData(g.state).ballotStage, "SHOOTOUT");
+  assert.equal(g.state.speaker, 2);
+  assert.equal(g.state.speechEndsAt, 31000);
+  expireSpeech(g.state, 31000);
+  assert.equal(g.state.speaker, 6);
+  demoAction(g, "SPEECH_NEXT");
+  assert.equal(roundData(g.state).ballotStage, "REVOTE");
+  assert.deepEqual(roundData(g.state).votes, {});
+  assert.throws(() => demoAction(g, "VOTE", 1, 9));
+  demoAction(g, "VOTE", 1, 6);
+  demoAction(g, "VOTE_FINISH");
+  assert.equal(g.state.players[5].status, "VOTED");
+  assert.deepEqual(cardVoters(g.state, 6), [1]);
+  assert.deepEqual(cardVoters(g.state, 2), []);
+});
+test("repeat tie lifts everyone only at the floor-half threshold and hides split voters", () => {
+  const run = (count) => {
+    const g = game();
+    demoAction(g, "PHASE_NEXT");
+    demoAction(g, "VOTE", 1, 2);
+    demoAction(g, "VOTE", 4, 6);
+    demoAction(g, "VOTE_FINISH");
+    demoAction(g, "SPEECH_NEXT");
+    demoAction(g, "SPEECH_NEXT");
+    demoAction(g, "VOTE", 1, 2);
+    demoAction(g, "VOTE", 4, 6);
+    demoAction(g, "VOTE_FINISH");
+    assert.equal(roundData(g.state).ballotStage, "LIFT");
+    for (const n of [1, 2, 4, 5].slice(0, count)) demoAction(g, "LIFT_VOTE", n);
+    demoAction(g, "LIFT_FINISH");
+    return g;
+  };
+  assert.deepEqual(roundData(run(3).state).eliminatedSeats, []);
+  const g = run(4);
+  assert.deepEqual(roundData(g.state).eliminatedSeats, [2, 6]);
+  assert.deepEqual(cardVoters(g.state, 2), []);
+  assert.deepEqual(cardVoters(g.state, 6), []);
+});
+test("votes on OBS disappear from survivors, stay on the eliminated player across rounds, and reveal no hidden role colors", () => {
+  const g = game();
+  demoAction(g, "PHASE_NEXT");
+  demoAction(g, "VOTE", 1, 2);
+  demoAction(g, "VOTE", 4, 2);
+  demoAction(g, "VOTE", 5, 6);
+  assert.deepEqual(cardVoters(g.state, 6), [5]);
+  demoAction(g, "VOTE_FINISH");
+  assert.deepEqual(cardVoters(g.state, 6), []);
+  assert.deepEqual(cardVoters(g.state, 2), [1, 4]);
+  demoAction(g, "PHASE_NEXT");
+  assert.deepEqual(cardVoters(g.state, 2), [1, 4]);
+  assert(project(g).state.players.every((p) => p.role === "UNKNOWN"));
 });

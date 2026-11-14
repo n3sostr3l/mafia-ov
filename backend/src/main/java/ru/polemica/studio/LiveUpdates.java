@@ -36,11 +36,13 @@ class WebSocketConfig implements WebSocketConfigurer {
 class LiveUpdates extends TextWebSocketHandler {
   private final GameService service;
   private final ObjectMapper mapper;
+  private final TournamentAccess access;
   private final Map<String, WebSocketSession> clients = new ConcurrentHashMap<>();
 
-  LiveUpdates(GameService service, ObjectMapper mapper) {
+  LiveUpdates(GameService service, ObjectMapper mapper, TournamentAccess access) {
     this.service = service;
     this.mapper = mapper;
+    this.access = access;
   }
 
   HandshakeInterceptor guard() {
@@ -55,11 +57,14 @@ class LiveUpdates extends TextWebSocketHandler {
           String id = path.substring(path.lastIndexOf('/') + 1);
           String query = request.getURI().getRawQuery();
           String token = null;
+          String editKey = null;
           if (query != null)
             for (String pair : query.split("&")) {
               String[] p = pair.split("=", 2);
               if (p[0].equals("token") && p.length == 2)
                 token = URLDecoder.decode(p[1], StandardCharsets.UTF_8);
+              if (p[0].equals("editKey") && p.length == 2)
+                editKey = URLDecoder.decode(p[1], StandardCharsets.UTF_8);
             }
           attrs.put("gameId", id);
           if (token != null) {
@@ -67,7 +72,8 @@ class LiveUpdates extends TextWebSocketHandler {
             attrs.put("token", token);
             attrs.put("public", true);
           } else {
-            service.getGame(id);
+            if (!access.allowed(access.gameTournament(id), editKey)) throw ApiErrors.missing();
+            attrs.put("editKey", editKey == null ? "" : editKey);
             attrs.put("public", false);
           }
           return true;
@@ -110,6 +116,9 @@ class LiveUpdates extends TextWebSocketHandler {
       Game g;
       if (pub) g = service.publicGame(id, (String) socket.getAttributes().get("token"));
       else {
+        if (!access.allowed(
+            access.gameTournament(id), (String) socket.getAttributes().get("editKey")))
+          throw ApiErrors.missing();
         g = service.getGame(id);
       }
       synchronized (socket) {

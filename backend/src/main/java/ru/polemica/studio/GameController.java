@@ -12,13 +12,17 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/v1")
 class GameController {
   private final GameService service;
+  private final TournamentAccess access;
 
-  GameController(GameService service) {
+  GameController(GameService service, TournamentAccess access) {
     this.service = service;
+    this.access = access;
   }
 
   record TournamentBody(
-      @NotBlank @Size(max = 150) String name, @Size(max = 100) String externalId) {}
+      @NotBlank @Size(max = 150) String name,
+      @Size(max = 100) String externalId,
+      @Size(max = 128) String password) {}
 
   record GameBody(
       @Min(1) @Max(100) int tableNumber,
@@ -40,7 +44,8 @@ class GameController {
     return service.action(id, body.revision(), body.type(), body.seat(), body.candidate());
   }
 
-  record TournamentView(String id, String name, String externalId, Instant createdAt) {}
+  record TournamentView(
+      String id, String name, String externalId, Instant createdAt, boolean passwordProtected) {}
 
   @GetMapping("/health")
   Map<String, String> health() {
@@ -66,8 +71,11 @@ class GameController {
   }
 
   @PostMapping("/tournaments")
+  @org.springframework.transaction.annotation.Transactional
   TournamentView createTournament(@Valid @RequestBody TournamentBody body) {
-    return tournamentView(service.createTournament(body.name(), body.externalId()));
+    var t = service.createTournament(body.name(), body.externalId());
+    if (body.password() != null && !body.password().isEmpty()) access.change(t.id, body.password());
+    return tournamentView(t);
   }
 
   @GetMapping("/tournaments/{id}")
@@ -95,8 +103,7 @@ class GameController {
 
   @PostMapping("/tournaments/{id}/games")
   GameService.GameView createGame(@PathVariable String id, @Valid @RequestBody GameBody body) {
-    return service.create(
-        id, body.tableNumber(), body.gameNumber(), body.demo(), body.playerIds());
+    return service.create(id, body.tableNumber(), body.gameNumber(), body.demo(), body.playerIds());
   }
 
   @GetMapping("/games/{id}")
@@ -130,6 +137,29 @@ class GameController {
     return Map.of("token", service.rotate(id));
   }
 
+  record MoveBody(
+      @Min(0) long revision,
+      @Min(1) @Max(100) int tableNumber,
+      @Min(1) @Max(10000) int gameNumber,
+      boolean swap) {}
+
+  @PatchMapping("/games/{id}/location")
+  GameService.GameView move(@PathVariable String id, @Valid @RequestBody MoveBody body) {
+    return service.move(id, body.revision(), body.tableNumber(), body.gameNumber(), body.swap());
+  }
+
+  @DeleteMapping("/games/{id}")
+  Map<String, Boolean> deleteGame(@PathVariable String id) {
+    service.deleteGame(id);
+    return Map.of("deleted", true);
+  }
+
+  @DeleteMapping("/tournaments/{id}")
+  Map<String, Boolean> deleteTournament(@PathVariable String id) {
+    service.deleteTournament(id);
+    return Map.of("deleted", true);
+  }
+
   @GetMapping("/public/games/{id}")
   ResponseEntity<GameService.GameView> publicGame(
       @PathVariable String id, @RequestParam String token) {
@@ -139,6 +169,6 @@ class GameController {
   }
 
   private TournamentView tournamentView(Tournament t) {
-    return new TournamentView(t.id, t.name, t.externalId, t.createdAt);
+    return new TournamentView(t.id, t.name, t.externalId, t.createdAt, t.passwordHash != null);
   }
 }

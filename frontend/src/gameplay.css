@@ -410,3 +410,171 @@
     top: 33%;
   }
 }
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.page-heading > .page-actions {
+  justify-content: flex-end;
+}
+.game-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.game-entry .game-row {
+  flex: 1;
+  border: 0;
+  min-width: 0;
+}
+.game-entry > .page-actions {
+  padding: 12px;
+}
+.candidate-ballot {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.candidate-label {
+  display: inline-block;
+  padding: 8px 12px;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.nominee-seats button.nominated {
+  background: var(--candidate-color);
+  border-color: var(--candidate-color);
+  color: white;
+}
+.player-picker {
+  position: relative;
+  min-width: 0;
+}
+.player-picker input {
+  width: 100%;
+}
+.picker-options {
+  position: absolute;
+  z-index: 25;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: white;
+  box-shadow: 0 10px 22px #172b4920;
+  border-radius: 7px;
+}
+.picker-options button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 12px;
+  border: 0;
+  background: white;
+}
+.picker-options button:hover,
+.picker-options [aria-selected="true"] {
+  background: #f1f4f8;
+}
+.picker-options img {
+  width: 26px;
+  height: 26px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.picker-options button:disabled {
+  opacity: 0.35;
+}
+.transfer-options {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+.card-voters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.card-voters span {
+  background: #354459;
+  color: #fff;
+  min-width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  border-radius: 4px;
+}
+.overlay-players .card-voters span {
+  font-size: 20px;
+  min-width: 32px;
+  height: 32px;
+}
+.compact .overlay-players .card-voters span {
+  font-size: 6px;
+  min-width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.check-role-dot {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.compact .check-role-dot {
+  width: 6px;
+  height: 6px;
+}
+.player-visual.voted-out .portrait {
+  transform-origin: bottom center;
+  animation: portrait-pressed 0.6s ease-out both;
+}
+@keyframes portrait-pressed {
+  from {
+    transform: scaleY(1);
+  }
+  65% {
+    transform: scaleY(0.68);
+  }
+  to {
+    transform: scaleY(0.76);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .player-visual.voted-out .portrait {
+    animation: none;
+    transform: scaleY(0.76);
+  }
+}
+@media (max-width: 700px) {
+  .game-entry {
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .game-entry > .page-actions {
+    padding: 0 12px 14px;
+  }
+  .page-heading > .page-actions {
+    justify-content: flex-start;
+  }
+  .testament-pick {
+    grid-template-columns: 20px minmax(0, 1fr) 80px;
+  }
+}
+
+.nominee-seats button.nominated:disabled {
+  opacity: 0.75;
+  filter: none;
+}

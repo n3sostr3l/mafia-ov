@@ -301,7 +301,7 @@
               <button
                 class="text-button"
                 (click)="change('Голосование очищено', clearNominees)"
-                [disabled]="saving() || !game().state.nominees.length"
+                [disabled]="saving() || !game().state.nominees.length || (game().state.phase === 'VOTING' && currentRound().ballotStage !== 'INITIAL')"
               >
                 Очистить
               </button>
@@ -310,8 +310,9 @@
               @for (p of game().state.players; track p.seat) {
               <button
                 [class.nominated]="game().state.nominees.includes(p.seat)"
+                [style.--candidate-color]="candidateColor(p.seat)"
                 (click)="nominate(p.seat)"
-                [disabled]="saving() || p.status !== 'ALIVE' || !!game().state.winner"
+                [disabled]="saving() || p.status !== 'ALIVE' || !!game().state.winner || (game().state.phase === 'VOTING' && currentRound().ballotStage !== 'INITIAL')"
                 [attr.aria-label]="'На голосовании: игрок ' + p.seat"
                 [attr.aria-pressed]="game().state.nominees.includes(p.seat)"
               >
@@ -320,56 +321,107 @@
               </button>
               }
             </div>
+            <h3>{{ ballotStage() }}</h3>
             <div class="vote-results">
-              @for (seat of game().state.nominees; track seat) {
-              <div class="candidate-votes">
+              @for (seat of (game().state.phase === 'VOTING' ?
+              ballotCandidates() : game().state.nominees); track seat) {
+              <div class="candidate-ballot">
                 <strong
-                  >№ {{ seat }} · {{ votesFor(seat).length }} голосов</strong
-                ><span>{{ votesFor(seat).join(', ') || 'Голосов нет' }}</span
-                >@if (currentRound().eliminated === seat) {
+                  class="candidate-label"
+                  [style.background]="candidateColor(seat)"
+                  >№ {{seat}} · {{game().state.players[seat-1].name}} ·
+                  {{votesFor(seat).length}} голосов</strong
+                >
+                @if (game().state.phase === 'VOTING' &&
+                (currentRound().ballotStage === 'INITIAL' ||
+                currentRound().ballotStage === 'REVOTE' ||
+                !currentRound().ballotStage)) {
+                <div class="voter-seats">
+                  @for (p of game().state.players; track p.seat) {
+                  <button
+                    [class.voted-for]="currentRound().votes[p.seat] === seat"
+                    [disabled]="voteDisabled(p.seat,seat)"
+                    [attr.aria-label]="'Игрок '+p.seat+' за кандидата '+seat"
+                    [attr.aria-pressed]="currentRound().votes[p.seat] === seat"
+                    (click)="vote(p.seat,seat)"
+                  >
+                    {{p.seat}}
+                  </button>
+                  }
+                </div>
+                } @else {
+                <p class="helper">
+                  {{votesFor(seat).join(', ') || 'Голосов нет'}}
+                </p>
+                } @if (currentRound().eliminatedSeats?.includes(seat) ||
+                currentRound().eliminated === seat) {
                 <b>Выбыл по голосованию</b> }
               </div>
               }
             </div>
-            @if (game().state.phase === 'VOTING') {
-            <label class="field-label" for="vote-candidate"
-              >За кого голосовали</label
-            ><select id="vote-candidate" [(ngModel)]="voteCandidate">
-              <option [ngValue]="null">Выберите кандидатуру</option>
-              @for (seat of game().state.nominees; track seat) {
-              <option [ngValue]="seat">
-                № {{ seat }} · {{ game().state.players[seat - 1].name }}
-              </option>
-              }
-            </select>
+            @if (game().state.phase === 'VOTING') { @if
+            (currentRound().ballotStage === 'SHOOTOUT') {
             <p class="helper">
-              Отметьте проголосовавших. Один игрок может отдать голос только за
-              одну кандидатуру.
+              Говорит № {{game().state.speaker}}. По 30 секунд каждому лидеру,
+              затем переголосование.
+            </p>
+            <app-speech-clock [state]="game().state" />
+            <div class="page-actions">
+              <button
+                class="button secondary"
+                (click)="action(game().state.speechEndsAt === null ? 'SPEECH_RESUME' : 'SPEECH_PAUSE')"
+                [disabled]="saving()"
+              >
+                {{game().state.speechEndsAt === null ? 'Продолжить' : 'Пауза'}}</button
+              ><button
+                class="button primary"
+                (click)="action('SPEECH_NEXT')"
+                [disabled]="saving()"
+              >
+                Пропустить речь
+              </button>
+            </div>
+            } @else if (currentRound().ballotStage === 'LIFT') {
+            <p>
+              Кто за подъём № {{currentRound().runoffCandidates?.join(', ')}}?
+            </p>
+            <p class="helper">
+              Нужно {{liftThreshold()}} голосов из {{alive()}}. Сейчас:
+              {{currentRound().liftVoters?.length}}.
             </p>
             <div class="voter-seats">
               @for (p of game().state.players; track p.seat) {
               <button
-                [class.voted-for]="voteCandidate !== null && currentRound().votes[p.seat] === voteCandidate"
-                [disabled]="saving() || !currentRound().eligibleVoters.includes(p.seat) || voteCandidate === null"
-                [attr.aria-label]="'Голос игрока ' + p.seat"
-                [attr.aria-pressed]="voteCandidate !== null && currentRound().votes[p.seat] === voteCandidate"
-                (click)="vote(p.seat)"
+                [disabled]="saving() || p.status !== 'ALIVE'"
+                [class.voted-for]="currentRound().liftVoters?.includes(p.seat)"
+                [attr.aria-label]="'Игрок '+p.seat+' за подъём'"
+                (click)="action('LIFT_VOTE',p.seat)"
               >
-                {{ p.seat }}<small
-                  >{{ currentRound().votes[p.seat] ? 'за № ' +
-                  currentRound().votes[p.seat] : '—' }}</small
-                >
+                {{p.seat}}
               </button>
               }
             </div>
             <button
               class="button primary"
-              (click)="eliminateCandidate()"
-              [disabled]="saving() || voteCandidate === null || currentRound().eliminated !== null || !!game().state.winner"
+              (click)="action('LIFT_FINISH')"
+              [disabled]="saving()"
             >
-              Завершить голосование: выбыл № {{ voteCandidate ?? '—' }}
+              Завершить голосование за подъём
             </button>
-            }
+            } @else if (currentRound().ballotStage !== 'COMPLETED') {
+            <p class="helper">
+              Голос игрока доступен только у одной кандидатуры. Чтобы исправить,
+              сначала снимите его там, где он отмечен.
+            </p>
+            <button
+              class="button primary"
+              (click)="action('VOTE_FINISH')"
+              [disabled]="saving()"
+            >
+              {{currentRound().ballotStage === 'REVOTE' ? 'Завершить
+              переголосование' : 'Завершить голосование'}}
+            </button>
+            } }
           </section>
         </div>
         <aside class="inspector">
@@ -422,7 +474,26 @@
             </button>
           </div>
           <div class="inspector-body">
-            @if (tab() === 'player') {
+            @if (tab() === 'player') { @if (!isDemo() &&
+            tournamentPlayers().length) {
+            <label class="field-label">Выбрать игрока турнира</label>
+            <app-player-picker
+              [options]="profileOptions()"
+              [(value)]="draftProfile"
+              label="Ник игрока турнира"
+            />
+            <button
+              class="button secondary"
+              [disabled]="saving() || !draftProfile"
+              (click)="assignProfile(draftProfile)"
+            >
+              Поставить на место № {{selected()}}
+            </button>
+            <p class="helper">
+              Если игрок уже за столом, участники поменяются местами. Роли
+              остаются назначены местам.
+            </p>
+            }
             <label class="field-label" for="player-name">Имя игрока</label>
             <div class="input-action">
               <input
@@ -544,15 +615,13 @@
             @if (testamentMode === 'COLORS') { @for (i of [0,1,2]; track i) {
             <div class="testament-pick">
               <span>{{ i + 1 }}</span
-              ><select
-                [attr.aria-label]="'Игрок для цвета ' + (i + 1)"
-                [(ngModel)]="testamentSeats[i]"
-              >
-                <option [ngValue]="null">Не выбран</option>
-                @for (p of game().state.players; track p.seat) {
-                <option [ngValue]="p.seat">{{ p.seat }} · {{ p.name }}</option>
-                }</select
-              ><select
+              ><app-player-picker
+                [options]="seatOptions()"
+                [value]="testamentSeats[i] === null ? null : ''+testamentSeats[i]"
+                (valueChange)="testamentSeats[i]=number($event)"
+                [label]="'Игрок для цвета '+(i+1)"
+              />
+              <select
                 [attr.aria-label]="'Цвет ' + (i + 1)"
                 [(ngModel)]="testamentColors[i]"
               >
@@ -563,11 +632,12 @@
             } } @else {
             <label class="field-label" for="wheel"
               >Игрок, которому оставлен руль</label
-            ><select id="wheel" [(ngModel)]="wheel">
-              @for (p of game().state.players; track p.seat) {
-              <option [ngValue]="p.seat">{{ p.seat }} · {{ p.name }}</option>
-              }
-            </select>
+            ><app-player-picker
+              [options]="seatOptions()"
+              [value]="''+wheel"
+              (valueChange)="wheel=number($event) ?? 1"
+              label="Игрок, которому оставлен руль"
+            />
             }
             <button
               class="button primary full-width"
@@ -589,26 +659,22 @@
             </p>
             <label class="field-label" for="check-checker"
               >Проверяющий игрок</label
-            ><select
-              id="check-checker"
-              [ngModel]="checker()?.seat"
-              (ngModelChange)="checkChecker = $event"
-            >
-              @for (p of checkers(); track p.seat) {
-              <option [ngValue]="p.seat">
-                № {{ p.seat }} · {{ p.name }} · {{ roleLabel(p.role) }}
-              </option>
-              }
-            </select>
+            ><app-player-picker
+              [options]="seatOptions(true)"
+              [value]="checker() ? ''+checker()!.seat : null"
+              (valueChange)="checkChecker=number($event) ?? 1"
+              label="Проверяющий игрок"
+            />
             <p class="helper">
               Роль проверяющего и результат определяются назначенными ролями.
             </p>
             <label class="field-label" for="check-seat">Проверяемый игрок</label
-            ><select id="check-seat" [(ngModel)]="checkSeat">
-              @for (p of game().state.players; track p.seat) {
-              <option [ngValue]="p.seat">№ {{ p.seat }} · {{ p.name }}</option>
-              }
-            </select>
+            ><app-player-picker
+              [options]="seatOptions()"
+              [value]="''+checkSeat"
+              (valueChange)="checkSeat=number($event) ?? 1"
+              label="Проверяемый игрок"
+            />
             @if (checker()) {
             <div class="automatic-check">
               <span>Результат автоматически</span
@@ -696,6 +762,9 @@
           <h1>Турниры</h1>
           <p>Выберите турнир, стол и партию для трансляции.</p>
         </div>
+        <button class="button secondary" (click)="transfer('import')">
+          Импорт турнира
+        </button>
         <button class="button primary" (click)="modal.set('newTournament')">
           <app-icon name="plus" />Создать турнир
         </button>
@@ -765,9 +834,27 @@
           <h1>{{ chosenTournament()?.name }}</h1>
           <p>Игроки турнира, их фото и партии хранятся вместе.</p>
         </div>
-        <button class="button primary" (click)="newGame()">
-          <app-icon name="plus" />Добавить партию
-        </button>
+        <div class="page-actions">
+          <button class="button secondary" (click)="transfer('export')">
+            Экспорт
+          </button>
+          <button
+            class="button secondary"
+            (click)="password='';modal.set('access')"
+          >
+            {{chosenTournament()?.passwordProtected ? 'Сменить пароль' : 'Задать
+            пароль'}}
+          </button>
+          <button
+            class="button secondary"
+            (click)="confirmDelete('tournaments',chosenTournament()!.id,chosenTournament()!.name)"
+          >
+            Удалить турнир
+          </button>
+          <button class="button primary" (click)="newGame()">
+            <app-icon name="plus" />Добавить партию
+          </button>
+        </div>
       </div>
       <details class="settings-section tournament-roster" open>
         <summary class="roster-toggle">
@@ -775,104 +862,117 @@
           <app-icon name="chevron" />
         </summary>
         <div class="roster-content">
-        <p class="helper">
-          Фото и ник игрока обновятся во всех партиях турнира.
-        </p>
-        @if (tournamentPlayers().length) {
-        <div class="roster-player-list">
-          @for (player of tournamentPlayers(); track player.id) {
-          <div class="roster-player-row">
-            @if (player.photo) {
-            <img
-              class="roster-player-photo"
-              [src]="'/api/v1/uploads/' + player.photo"
-              [alt]="'Фото ' + player.name"
-            />
-            } @else {
-            <span class="roster-player-photo empty"
-              ><app-icon name="users"
-            /></span>
-            }
-            <label class="roster-player-name">
-              <span class="field-label">Ник игрока</span>
-              <input
-                [id]="'roster-player-' + player.id"
-                [name]="'roster-player-' + player.id"
-                [(ngModel)]="player.name"
-                maxlength="50"
+          <p class="helper">
+            Фото и ник игрока обновятся во всех партиях турнира.
+          </p>
+          @if (tournamentPlayers().length) {
+          <div class="roster-player-list">
+            @for (player of tournamentPlayers(); track player.id) {
+            <div class="roster-player-row">
+              @if (player.photo) {
+              <img
+                class="roster-player-photo"
+                [src]="'/api/v1/uploads/' + player.photo"
+                [alt]="'Фото ' + player.name"
               />
-            </label>
-            <label
-              class="icon-button upload-button"
-              [title]="'Фото игрока ' + player.name"
-            >
-              <app-icon name="upload" />
-              <input
-                type="file"
-                accept="image/jpeg,image/png"
-                [attr.aria-label]="'Загрузить фото: ' + player.name"
-                (change)="uploadTournamentPlayerPhoto($event, player)"
-              />
-            </label>
-            <button
-              class="icon-button"
-              [title]="'Сохранить профиль ' + player.name"
-              [disabled]="saving()"
-              (click)="saveTournamentPlayer(player)"
-            >
-              <app-icon name="check" />
-            </button>
-            @if (player.photo) {
-            <button
-              class="icon-button"
-              [title]="'Удалить фото ' + player.name"
-              [disabled]="saving()"
-              (click)="removeTournamentPlayerPhoto(player)"
-            >
-              <app-icon name="close" />
-            </button>
+              } @else {
+              <span class="roster-player-photo empty"
+                ><app-icon name="users"
+              /></span>
+              }
+              <label class="roster-player-name">
+                <span class="field-label">Ник игрока</span>
+                <input
+                  [id]="'roster-player-' + player.id"
+                  [name]="'roster-player-' + player.id"
+                  [(ngModel)]="player.name"
+                  maxlength="50"
+                />
+              </label>
+              <label
+                class="icon-button upload-button"
+                [title]="'Фото игрока ' + player.name"
+              >
+                <app-icon name="upload" />
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  [attr.aria-label]="'Загрузить фото: ' + player.name"
+                  (change)="uploadTournamentPlayerPhoto($event, player)"
+                />
+              </label>
+              <button
+                class="icon-button"
+                [title]="'Сохранить профиль ' + player.name"
+                [disabled]="saving()"
+                (click)="saveTournamentPlayer(player)"
+              >
+                <app-icon name="check" />
+              </button>
+              @if (player.photo) {
+              <button
+                class="icon-button"
+                [title]="'Удалить фото ' + player.name"
+                [disabled]="saving()"
+                (click)="removeTournamentPlayerPhoto(player)"
+              >
+                <app-icon name="close" />
+              </button>
+              }
+            </div>
             }
           </div>
+          } @else {
+          <p class="helper">
+            Добавьте игроков здесь или задайте имена в первой партии — они
+            появятся в списке автоматически.
+          </p>
           }
-        </div>
-        } @else {
-        <p class="helper">
-          Добавьте игроков здесь или задайте имена в первой партии — они
-          появятся в списке автоматически.
-        </p>
-        }
-        <div class="roster-add-player">
-          <input
-            aria-label="Ник нового игрока"
-            name="newRosterPlayerName"
-            [(ngModel)]="newRosterPlayerName"
-            maxlength="50"
-            placeholder="Ник нового игрока"
-            (keydown.enter)="$event.preventDefault(); addTournamentPlayer()"
-          />
-          <button
-            class="button secondary"
-            [disabled]="saving()"
-            (click)="addTournamentPlayer()"
-          >
-            <app-icon name="plus" />Добавить игрока
-          </button>
-        </div>
+          <div class="roster-add-player">
+            <input
+              aria-label="Ник нового игрока"
+              name="newRosterPlayerName"
+              [(ngModel)]="newRosterPlayerName"
+              maxlength="50"
+              placeholder="Ник нового игрока"
+              (keydown.enter)="$event.preventDefault(); addTournamentPlayer()"
+            />
+            <button
+              class="button secondary"
+              [disabled]="saving()"
+              (click)="addTournamentPlayer()"
+            >
+              <app-icon name="plus" />Добавить игрока
+            </button>
+          </div>
         </div>
       </details>
       <div class="game-list">
         @for (g of summaries(); track g.id) {
-        <button class="game-row" (click)="openGame(g.id)">
-          <span class="game-table-number">{{ g.tableNumber }}</span>
-          <div>
-            <strong>Стол {{ g.tableNumber }} · Партия {{ g.gameNumber }}</strong
-            ><small
-              >Обновлено {{ g.updatedAt | date:'dd.MM.yyyy HH:mm' }}</small
+        <div class="game-entry">
+          <button class="game-row" (click)="openGame(g.id)">
+            <span class="game-table-number">{{ g.tableNumber }}</span>
+            <div>
+              <strong
+                >Стол {{ g.tableNumber }} · Партия {{ g.gameNumber }}</strong
+              ><small
+                >Обновлено {{ g.updatedAt | date:'dd.MM.yyyy HH:mm' }}</small
+              >
+            </div>
+            <span class="game-row-label">Открыть панель</span
+            ><app-icon name="chevron" />
+          </button>
+          <div class="page-actions">
+            <button class="text-button" (click)="editLocation(g)">
+              Стол / партия</button
+            ><button
+              class="text-button"
+              (click)="confirmDelete('games',g.id,'Стол '+g.tableNumber+' · Партия '+g.gameNumber)"
             >
+              Удалить
+            </button>
           </div>
-          <span class="game-row-label">Открыть панель</span
-          ><app-icon name="chevron" />
-        </button>
+        </div>
         } @empty {
         <div class="empty-state">
           <app-icon name="grid" />
@@ -1223,9 +1323,20 @@
         maxlength="100"
       />
       <p class="helper">
-        Идентификатор сохраняется как справочная информация. Импорт пока
-        недоступен.
+        Идентификатор сохраняется как справочная информация. Импорт из Polemica
+        пока недоступен.
       </p>
+      <label class="field-label" for="new-password"
+        >Пароль турнира (необязательно)</label
+      ><input
+        id="new-password"
+        name="password"
+        type="password"
+        [(ngModel)]="password"
+        autocomplete="new-password"
+        minlength="4"
+        maxlength="128"
+      />
       <button
         class="button primary full-width"
         type="submit"
@@ -1271,20 +1382,11 @@
           @for (seat of rosterSeats; track seat) {
           <label>
             <span>Место {{ seat }}</span>
-            <select
-              [(ngModel)]="newGamePlayerIds[seat - 1]"
-              [name]="'player-' + seat"
-            >
-              <option [ngValue]="null">Не выбрано</option>
-              @for (player of tournamentPlayers(); track player.id) {
-              <option
-                [ngValue]="player.id"
-                [disabled]="newGamePlayerIds.includes(player.id) && newGamePlayerIds[seat - 1] !== player.id"
-              >
-                {{ player.name }}
-              </option>
-              }
-            </select>
+            <app-player-picker
+              [options]="profileOptions(seat)"
+              [(value)]="newGamePlayerIds[seat-1]"
+              [label]="'Ник на месте '+seat"
+            />
           </label>
           }
         </div>
@@ -1305,6 +1407,139 @@
         Открыть панель судьи
       </button>
     </form>
+    } @if (modal() === 'unlock' || modal() === 'access') {
+    <h2>{{modal() === 'unlock' ? 'Пароль турнира' : 'Доступ к турниру'}}</h2>
+    <p>
+      {{modal() === 'unlock' ? 'Введите общий пароль, чтобы открыть панель
+      управления.' : 'Пароль защищает данные и редактирование этого турнира. OBS
+      открывается без пароля. Пустое поле снимает защиту.'}}
+    </p>
+    <form
+      (ngSubmit)="modal() === 'unlock' ? unlockTournament() : savePassword()"
+    >
+      <label class="field-label" for="tournament-password"
+        >{{modal() === 'unlock' ? 'Пароль' : 'Новый пароль'}}</label
+      ><input
+        id="tournament-password"
+        name="password"
+        type="password"
+        [(ngModel)]="password"
+        maxlength="128"
+        [required]="modal() === 'unlock'"
+        autocomplete="off"
+      />
+      <button
+        class="button primary full-width"
+        type="submit"
+        [disabled]="saving()"
+      >
+        {{modal() === 'unlock' ? 'Открыть турнир' : 'Сохранить доступ'}}
+      </button>
+    </form>
+    } @if (modal() === 'location') {
+    <h2>Стол и номер партии</h2>
+    <form (ngSubmit)="saveLocation()">
+      <div class="two-fields">
+        <label
+          >Стол<input
+            type="number"
+            name="table"
+            [(ngModel)]="newTable"
+            min="1"
+            max="100"
+            required /></label
+        ><label
+          >Партия<input
+            type="number"
+            name="game"
+            [(ngModel)]="newGameNumber"
+            min="1"
+            max="10000"
+            required
+        /></label>
+      </div>
+      <label class="checkbox-label"
+        ><input type="checkbox" name="swap" [(ngModel)]="swapLocation" />Если
+        место занято, обменять партии местами</label
+      >
+      <p class="helper">
+        Состав меняется в панели судьи: выберите место и игрока турнира.
+      </p>
+      <button class="button primary full-width" [disabled]="saving()">
+        Сохранить
+      </button>
+    </form>
+    } @if (modal() === 'delete') {
+    <h2>Удалить {{pendingDelete?.kind === 'games' ? 'партию' : 'турнир'}}?</h2>
+    <p>{{pendingDelete?.name}}</p>
+    <p>
+      Будут удалены {{pendingDelete?.kind === 'games' ? 'партия и её история.' :
+      'турнир, все его партии, история и список игроков.'}} Для резервной копии
+      сначала экспортируйте турнир.
+    </p>
+    <div class="page-actions">
+      <button class="button secondary" (click)="modal.set(null)">Отмена</button
+      ><button
+        class="button primary"
+        (click)="deleteResource()"
+        [disabled]="saving()"
+      >
+        Удалить
+      </button>
+    </div>
+    } @if (modal() === 'transfer') {
+    <h2>
+      {{transferMode === 'export' ? 'Экспорт турнира' : 'Импорт турнира'}}
+    </h2>
+    <p>
+      Выберите данные для переноса. Фотографии включаются в ZIP. При импорте
+      создаётся новый турнир без перезаписи существующего; пароль в архив не
+      входит.
+    </p>
+    @if (transferMode === 'import') {
+    <label class="field-label" for="archive-file"
+      >ZIP-архив Polemica Studio (до 50 МБ)</label
+    ><input
+      id="archive-file"
+      type="file"
+      accept=".zip,application/zip"
+      (change)="pickArchive($event)"
+    />
+    }
+    <div class="transfer-options">
+      <label class="checkbox-label"
+        ><input type="checkbox" [(ngModel)]="transferOptions.seating" />Рассадки
+        и партии</label
+      ><label class="checkbox-label"
+        ><input
+          type="checkbox"
+          [(ngModel)]="transferOptions.photos"
+        />Фотографии игроков</label
+      ><label class="checkbox-label"
+        ><input
+          type="checkbox"
+          [(ngModel)]="transferOptions.roles"
+        />Роли</label
+      ><label class="checkbox-label"
+        ><input
+          type="checkbox"
+          [(ngModel)]="transferOptions.progress"
+        />Состояние игры и голосования</label
+      ><label class="checkbox-label"
+        ><input
+          type="checkbox"
+          [(ngModel)]="transferOptions.theme"
+        />Оформление</label
+      >
+    </div>
+    <button
+      class="button primary full-width"
+      [disabled]="saving() || (transferMode === 'import' && !transferFile)"
+      (click)="transferTournament()"
+    >
+      {{saving() ? 'Подождите…' : transferMode === 'export' ? 'Скачать ZIP' :
+      'Импортировать'}}
+    </button>
     }
   </section>
 </div>
