@@ -12,15 +12,13 @@ ENV MAVEN_OPTS="-Xmx384m -XX:MaxMetaspaceSize=192m"
 COPY pom.xml .
 
 # Кэш Maven сохраняется между сборками
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B dependency:go-offline
+RUN mvn -B dependency:go-offline
 
 # Затем исходники
 COPY src ./src
 
 # Сборка приложения
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B verify
+RUN mvn -B verify
 
 # Runtime
 FROM eclipse-temurin:21-jre-alpine
