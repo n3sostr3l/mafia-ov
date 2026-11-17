@@ -10,8 +10,7 @@ ENV NODE_OPTIONS="--max-old-space-size=384"
 COPY package.json package-lock.json ./
 
 # Кэш npm между сборками
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline --no-audit --no-fund
+RUN npm ci --prefer-offline --no-audit --no-fund
 
 COPY . .
 
