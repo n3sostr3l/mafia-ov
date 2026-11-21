@@ -23,6 +23,9 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8088}
       UPLOAD_PATH: /app/data/uploads
+      POLEMICA_AUTHORIZATION: ${POLEMICA_AUTHORIZATION:-}
+      POLEMICA_API_TOKEN: ${POLEMICA_API_TOKEN:-}
+      POLEMICA_COOKIE: ${POLEMICA_COOKIE:-}
     volumes:
       - uploads:/app/data/uploads
     depends_on:

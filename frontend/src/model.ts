@@ -60,6 +60,7 @@ export interface State {
   speaker: number | null;
   showRoles: boolean;
   showChecks: boolean;
+  polemica?: PolemicaSnapshot;
 }
 export interface RoundData {
   nominees: number[];
@@ -75,6 +76,26 @@ export interface RoundData {
   shootoutSpoken?: number[];
   eliminatedSeats?: number[];
   splitLift?: boolean;
+}
+export interface PolemicaShot {
+  night: number;
+  shooter: number;
+  victim: number;
+}
+export interface PolemicaVote {
+  day: number;
+  num: number | null;
+  voter: number;
+  candidate: number;
+}
+export interface PolemicaSnapshot {
+  stageType: string | null;
+  stageDay: number | null;
+  stagePlayer: number | null;
+  externalResult: number | null;
+  externalVersion: number | null;
+  shots: PolemicaShot[];
+  votes: PolemicaVote[];
 }
 export function normalizeGame(g: Game): Game {
   const s = g.state;

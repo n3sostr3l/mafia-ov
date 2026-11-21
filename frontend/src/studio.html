@@ -792,10 +792,9 @@
       <div class="integration-notice">
         <app-icon name="link" />
         <div>
-          <strong>Polemica: ожидает подключения</strong>
+          <strong>Polemica: подключение доступно</strong>
           <p>
-            Доступ к API не подтверждён. Создайте турнир вручную, чтобы начать
-            работу.
+            Укажите ID Polemica при создании турнира, затем импортируйте партии.
           </p>
         </div>
         <button class="text-button" (click)="go('help')">Подробнее</button>
@@ -835,6 +834,15 @@
           <p>Игроки турнира, их фото и партии хранятся вместе.</p>
         </div>
         <div class="page-actions">
+          @if (chosenTournament()?.externalId) {
+          <button
+            class="button secondary"
+            [disabled]="saving() || loading()"
+            (click)="importPolemicaTournament()"
+          >
+            <app-icon name="link" />Обновить из Polemica
+          </button>
+          }
           <button class="button secondary" (click)="transfer('export')">
             Экспорт
           </button>
@@ -856,6 +864,42 @@
           </button>
         </div>
       </div>
+      @if (chosenTournament()?.externalId) {
+      <details class="settings-section" open>
+        <summary class="roster-toggle">
+          <h2>Авторизация Polemica</h2>
+          <app-icon name="chevron" />
+        </summary>
+        <div class="roster-content">
+          <div class="tournament-roster">
+            <label class="field-label" for="tournament-polemica-login"
+              >Логин Polemica</label
+            ><input
+              id="tournament-polemica-login"
+              name="tournamentPolemicaLogin"
+              [(ngModel)]="polemicaLogin"
+              autocomplete="username"
+            />
+            <label class="field-label" for="tournament-polemica-password"
+              >Пароль Polemica</label
+            ><input
+              id="tournament-polemica-password"
+              name="tournamentPolemicaPassword"
+              type="password"
+              [(ngModel)]="polemicaPassword"
+              autocomplete="current-password"
+            />
+            <button
+              class="button primary"
+              [disabled]="saving() || !polemicaLogin || !polemicaPassword"
+              (click)="importPolemicaTournament()"
+            >
+              Войти и импортировать
+            </button>
+          </div>
+        </div>
+      </details>
+      }
       <details class="settings-section tournament-roster" open>
         <summary class="roster-toggle">
           <h2>Игроки турнира</h2>
@@ -1188,11 +1232,11 @@
         </section>
         <section class="settings-section">
           <h2>Данные Polemica</h2>
-          <span class="integration-status">Доступ не подтверждён</span>
+          <span class="integration-status">ID турнира + live-синхронизация</span>
           <p>
-            Документация API и условия доступа не предоставлены. Импорт
-            турниров, ролей, событий, фотографий, ЛХ, проверок и готовых очков
-            пока недоступен.
+            При заданном ID Polemica импортируются состав, партии, проверки,
+            голосования, отстрелы и статус победителя. Для живого обновления
+            партия автоматически опрашивается каждые 10 секунд.
           </p>
           <p>
             Все поля партии можно заполнить вручную. Сервис не рассчитывает
@@ -1311,7 +1355,6 @@
         id="t-name"
         name="name"
         [(ngModel)]="newName"
-        required
         maxlength="150"
         placeholder="Например, Кубок осени"
       /><label class="field-label" for="external-id"
@@ -1323,8 +1366,29 @@
         maxlength="100"
       />
       <p class="helper">
-        Идентификатор сохраняется как справочная информация. Импорт из Polemica
-        пока недоступен.
+        ID из адреса турнира Polemica. После создания турнира можно импортировать
+        состав и партии. Название турнира импортируется автоматически при наличии
+        доступа к API Polemica.
+      </p>
+      <label class="field-label" for="polemica-login"
+        >Логин Polemica</label
+      ><input
+        id="polemica-login"
+        name="polemicaLogin"
+        [(ngModel)]="polemicaLogin"
+        autocomplete="username"
+      /><label class="field-label" for="polemica-password"
+        >Пароль Polemica</label
+      ><input
+        id="polemica-password"
+        name="polemicaPassword"
+        type="password"
+        [(ngModel)]="polemicaPassword"
+        autocomplete="current-password"
+      />
+      <p class="helper">
+        Логин и пароль используются сервером один раз для получения токена.
+        Пароль не сохраняется в приложении.
       </p>
       <label class="field-label" for="new-password"
         >Пароль турнира (необязательно)</label

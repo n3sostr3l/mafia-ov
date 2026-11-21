@@ -3,6 +3,29 @@ package ru.polemica.studio;
 import java.util.*;
 
 public class GameState {
+  public static class PolemicaShot {
+    public int night;
+    public int shooter;
+    public int victim;
+  }
+
+  public static class PolemicaVote {
+    public int day;
+    public Integer num;
+    public int voter;
+    public int candidate;
+  }
+
+  public static class PolemicaSnapshot {
+    public String stageType;
+    public Integer stageDay;
+    public Integer stagePlayer;
+    public Integer externalResult;
+    public Integer externalVersion;
+    public List<PolemicaShot> shots = new ArrayList<>();
+    public List<PolemicaVote> votes = new ArrayList<>();
+  }
+
   public enum Role {
     CIVILIAN,
     MAFIA,
@@ -87,6 +110,7 @@ public class GameState {
   public Integer speaker;
   public boolean showRoles;
   public boolean showChecks;
+  public PolemicaSnapshot polemica;
   public Map<Integer, RoundData> rounds = new TreeMap<>();
   public Integer firstDeparted;
   public String winner;

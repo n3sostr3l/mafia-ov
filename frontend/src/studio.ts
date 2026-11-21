@@ -127,6 +127,8 @@ export class StudioComponent implements OnInit, OnDestroy {
   checkChecker = 4;
   checkSeat = 1;
   password = "";
+  polemicaLogin = "";
+  polemicaPassword = "";
   lockedTournament = "";
   draftProfile: string | null = null;
   transferMode: "import" | "export" = "export";
@@ -148,6 +150,8 @@ export class StudioComponent implements OnInit, OnDestroy {
   private lockListener = (event: Event) => {
     this.lockedTournament = (event as CustomEvent).detail.id;
     this.password = "";
+    this.polemicaLogin = "";
+    this.polemicaPassword = "";
     this.stopLive();
     this.modal.set("unlock");
   };
@@ -168,6 +172,7 @@ export class StudioComponent implements OnInit, OnDestroy {
   private reconnect?: ReturnType<typeof setTimeout>;
   private destroyed = false;
   private pendingLive?: Game;
+  private polemicaPoll?: ReturnType<typeof setInterval>;
   private storageListener = (e: StorageEvent) => {
     if (e.key === "polemica-demo-v1" && this.isDemo()) {
       const g = this.readDemo();
@@ -271,11 +276,25 @@ export class StudioComponent implements OnInit, OnDestroy {
         localStorage.setItem("polemica-demo-v1", JSON.stringify(next));
         this.notify(description);
       } else {
-        const result = await this.api.request<Game>(
-          "/games/" + current.id,
-          "PUT",
-          { revision: current.revision, state: next.state, description },
-        );
+        let result: Game;
+        try {
+          result = await this.api.request<Game>(
+            "/games/" + current.id,
+            "PUT",
+            { revision: current.revision, state: next.state, description },
+          );
+        } catch (e: any) {
+          if (e.status !== 409) throw e;
+          const latest = await this.api.request<Game>("/games/" + current.id);
+          const rebased = structuredClone(latest);
+          mutate(rebased.state);
+          result = await this.api.request<Game>(
+            "/games/" + latest.id,
+            "PUT",
+            { revision: latest.revision, state: rebased.state, description },
+          );
+          this.notify("Изменение применено к актуальной партии.");
+        }
         this.game.set(result);
         this.notify("Сохранено: " + description.toLowerCase());
       }
@@ -442,13 +461,24 @@ export class StudioComponent implements OnInit, OnDestroy {
       return;
     }
     await this.run(async () => {
-      this.game.set(
-        await this.api.request<Game>(
-          "/games/" + this.game().id + "/actions",
+      let game = this.game();
+      try {
+        game = await this.api.request<Game>(
+          "/games/" + game.id + "/actions",
           "POST",
-          { revision: this.game().revision, type, seat, candidate },
-        ),
-      );
+          { revision: game.revision, type, seat, candidate },
+        );
+      } catch (e: any) {
+        if (e.status !== 409) throw e;
+        const latest = await this.api.request<Game>("/games/" + game.id);
+        game = await this.api.request<Game>(
+          "/games/" + latest.id + "/actions",
+          "POST",
+          { revision: latest.revision, type, seat, candidate },
+        );
+        this.notify("Действие применено к актуальной партии.");
+      }
+      this.game.set(game);
     });
   }
   async stepPhase(direction: number) {
@@ -763,6 +793,8 @@ export class StudioComponent implements OnInit, OnDestroy {
         name: this.newName,
         externalId: this.externalId || null,
         password: this.password || null,
+        polemicaLogin: this.polemicaLogin || null,
+        polemicaPassword: this.polemicaPassword || null,
       });
       if (this.password) {
         const grant = await this.api.request<{ key: string }>(
@@ -773,6 +805,8 @@ export class StudioComponent implements OnInit, OnDestroy {
         this.api.remember(t.id, grant.key);
       }
       this.password = "";
+      this.polemicaLogin = "";
+      this.polemicaPassword = "";
       this.modal.set(null);
       this.newName = "";
       this.externalId = "";
@@ -798,6 +832,51 @@ export class StudioComponent implements OnInit, OnDestroy {
     } finally {
       this.loading.set(false);
     }
+  }
+  async importPolemicaTournament() {
+      const tournament = this.chosenTournament();
+      if (!tournament?.externalId) {
+        this.notify("Сначала задайте идентификатор Polemica.");
+        return;
+      }
+      await this.run(async () => {
+        if (this.polemicaLogin && this.polemicaPassword) {
+          await this.api.request(
+            "/polemica/login",
+            "POST",
+            {
+              competitionId: tournament.externalId,
+              login: this.polemicaLogin,
+              password: this.polemicaPassword,
+            },
+          );
+          this.polemicaPassword = "";
+        }
+        const result = await this.api.request<{
+          imported: number;
+          members: number;
+          gameRows: number;
+          memberRows: number;
+          skippedGames: number;
+        }>(
+          "/tournaments/" + tournament.id + "/polemica/import",
+          "POST",
+        );
+        await this.openTournament(tournament.id, false);
+        this.notify(
+          "Polemica: строк игр " +
+            result.gameRows +
+            ", импортировано партий " +
+            result.imported +
+            ", строк игроков " +
+            result.memberRows +
+            ", профилей " +
+            result.members +
+            ", пропущено игр " +
+            result.skippedGames +
+            ".",
+        );
+      });
   }
   async addTournamentPlayer() {
     const name = this.newRosterPlayerName.trim();
@@ -918,6 +997,7 @@ export class StudioComponent implements OnInit, OnDestroy {
       this.page.set("studio");
       this.settingsDraft = structuredClone(g.state.theme);
       this.startLive(id);
+      this.startPolemicaLive(id);
     } catch (e: any) {
       this.error.set(e.message);
     } finally {
@@ -1160,8 +1240,27 @@ export class StudioComponent implements OnInit, OnDestroy {
       this.overlayError.set(e.message);
     }
   }
+  private startPolemicaLive(id: string) {
+    clearInterval(this.polemicaPoll);
+    if (!this.chosenTournament()?.externalId || this.isDemo()) return;
+    const refresh = async () => {
+      if (this.saving() || this.destroyed || this.game().id !== id) return;
+      try {
+        const g = await this.api.request<Game>(
+          "/games/" + id + "/polemica/refresh",
+          "POST",
+        );
+        if (g.revision >= this.game().revision) this.game.set(normalizeGame(g));
+      } catch (e: any) {
+        if (e.status !== 404) this.connected.set(false);
+      }
+    };
+    void refresh();
+    this.polemicaPoll = setInterval(() => void refresh(), 10000);
+  }
   private stopLive() {
     clearInterval(this.poll);
+    clearInterval(this.polemicaPoll);
     clearTimeout(this.reconnect);
     this.socket?.close();
     this.socket = undefined;

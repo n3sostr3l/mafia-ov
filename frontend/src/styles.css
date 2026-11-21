@@ -2303,7 +2303,7 @@ textarea {
 .overlay-event-row > span {
   font-size: 0.65em;
   color: #8c98aa;
-  min-width: 120px;
+  max-width: 18px;
 }
 .overlay-event-row > div {
   display: flex;

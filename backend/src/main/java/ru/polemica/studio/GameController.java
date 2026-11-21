@@ -13,16 +13,20 @@ import org.springframework.web.server.ResponseStatusException;
 class GameController {
   private final GameService service;
   private final TournamentAccess access;
+  private final IntegrationController polemica;
 
-  GameController(GameService service, TournamentAccess access) {
+  GameController(GameService service, TournamentAccess access, IntegrationController polemica) {
     this.service = service;
     this.access = access;
+    this.polemica = polemica;
   }
 
   record TournamentBody(
-      @NotBlank @Size(max = 150) String name,
+      @Size(max = 150) String name,
       @Size(max = 100) String externalId,
-      @Size(max = 128) String password) {}
+      @Size(max = 128) String password,
+      @Size(max = 200) String polemicaLogin,
+      @Size(max = 200) String polemicaPassword) {}
 
   record GameBody(
       @Min(1) @Max(100) int tableNumber,
@@ -73,7 +77,30 @@ class GameController {
   @PostMapping("/tournaments")
   @org.springframework.transaction.annotation.Transactional
   TournamentView createTournament(@Valid @RequestBody TournamentBody body) {
-    var t = service.createTournament(body.name(), body.externalId());
+    String localName =
+        body.name() == null || body.name().isBlank()
+            ? (body.externalId() == null || body.externalId().isBlank()
+                ? "Турнир"
+                : "Турнир Polemica " + body.externalId().trim())
+            : body.name();
+    var t = service.createTournament(localName, body.externalId());
+    if (body.externalId() != null && !body.externalId().isBlank()) {
+      if (body.polemicaLogin() != null && body.polemicaPassword() != null
+          && !body.polemicaLogin().isBlank() && !body.polemicaPassword().isBlank()) {
+        polemica.login(Map.of(
+            "competitionId", body.externalId().trim(),
+            "login", body.polemicaLogin(),
+            "password", body.polemicaPassword()));
+      }
+      try {
+        String externalName = polemica.competitionName(body.externalId().trim());
+        if (externalName != null) {
+          t = service.updateTournamentName(t, externalName);
+        }
+      } catch (RuntimeException ignored) {
+        // Polemica authorization is optional; a local tournament must still be created.
+      }
+    }
     if (body.password() != null && !body.password().isEmpty()) access.change(t.id, body.password());
     return tournamentView(t);
   }

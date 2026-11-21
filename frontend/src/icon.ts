@@ -14,6 +14,8 @@ const paths: Record<string, string> = {
   mic: "M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0z M5 10v2a7 7 0 0 0 14 0v-2 M12 19v3 M8 22h8",
   target:
     "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16 M12 1v6 M12 17v6 M1 12h6 M17 12h6 M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4",
+  pistol:
+    "M3 9h13l3 3v3H10l-2 3H5l1-6H3z M16 12h3",
   vote: "M4 12l4-6 4 3 4-3 4 6 M3 12h18v9H3z M9 15h6 M9 2l3 3 3-3",
   eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12 M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6",
   hidden:

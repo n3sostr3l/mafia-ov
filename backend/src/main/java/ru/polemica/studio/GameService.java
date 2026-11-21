@@ -74,6 +74,16 @@ class GameService {
     return tournaments.save(t);
   }
 
+  @Transactional
+  Tournament updateTournamentName(Tournament tournament, String name) {
+    String cleanName = name == null ? "" : name.strip();
+    if (!cleanName.isBlank()) {
+      tournament.name = cleanName;
+      return tournaments.save(tournament);
+    }
+    return tournament;
+  }
+
   List<Summary> summaries(String id) {
     getTournament(id);
     return games.findByTournamentIdOrderByTableNumberAscGameNumberAsc(id).stream()
@@ -169,7 +179,7 @@ class GameService {
     return g;
   }
 
-  GameState state(Game g) {
+  public GameState state(Game g) {
     try {
       var s = mapper.readValue(g.stateJson, GameState.class);
       rules.prepare(s);
@@ -263,7 +273,7 @@ class GameService {
     return saveState(g, state, description);
   }
 
-  GameView saveState(Game g, GameState state, String description) {
+  public GameView saveState(Game g, GameState state, String description) {
     applyRoster(g, state);
     validateRoster(state);
     g.stateJson = json(state);

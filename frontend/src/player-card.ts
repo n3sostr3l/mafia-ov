@@ -50,6 +50,14 @@ import { IconComponent } from "./icon";
           ><app-icon name="vote"
         /></span>
       }
+      @if (mafiaShot(player.seat)) {
+        <span
+          class="event-icon pistol"
+          animate.leave="event-leave"
+          title="Выстрел мафии"
+          ><app-icon name="pistol"
+        /></span>
+      }
       @if (state.speaker === player.seat) {
         <span class="speaking-indicator"><i></i><i></i><i></i><i></i></span>
       }
@@ -107,6 +115,12 @@ export class PlayerCardComponent implements OnChanges {
   }
   voters() {
     return cardVoters(this.state, this.player.seat);
+  }
+  mafiaShot(seat: number) {
+    return (
+      this.state.polemica?.stageType === "shooting" &&
+      this.state.polemica.shots.some((shot) => shot.shooter === seat)
+    );
   }
   color(role: Role) {
     return roleColor(this.state.theme, role);

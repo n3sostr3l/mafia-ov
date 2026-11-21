@@ -19,6 +19,11 @@ app:
   public-url: ${PUBLIC_URL:http://localhost:8088}
   uploads: ${UPLOAD_PATH:./data/uploads}
   dev: false
+  polemica:
+    base-url: ${POLEMICA_BASE_URL:https://app.polemicagame.com}
+    authorization: ${POLEMICA_AUTHORIZATION:}
+    api-token: ${POLEMICA_API_TOKEN:}
+    cookie: ${POLEMICA_COOKIE:}
 logging:
   level:
     org.springframework.security: WARN
